@@ -45,13 +45,101 @@ test("panel keys don't fire while the viewer is open", async ({ page }) => {
   await expect(panel(page, 0)).toHaveClass(/active/);
 });
 
-test("F3 on a PDF shows it in an iframe", async ({ page }) => {
-  await page.keyboard.type("doc", { delay: 30 });
+async function openIn(page: Page, dir: string, file: string) {
+  await page.keyboard.press("Meta+l");
+  await page.keyboard.type(`/Users/demo/${dir}`);
   await page.keyboard.press("Enter");
-  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo/Documents");
-  await page.keyboard.type("rep", { delay: 30 });
-  expect(await cursorName(page)).toBe("report.pdf");
-  await page.keyboard.press("F3");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText(`/Users/demo/${dir}`);
+  await page.keyboard.type(file.slice(0, 3), { delay: 30 });
+  expect(await cursorName(page)).toBe(file);
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".viewer-name")).toHaveText(file);
+}
+
+const mockState = (page: Page) =>
+  page.evaluate(() => {
+    const m = (window as unknown as { __mock: { prefs: Record<string, unknown>; fullscreen: boolean } }).__mock;
+    return { prefs: m.prefs, fullscreen: m.fullscreen };
+  });
+
+test("PDF renders with PDF.js, has focus without a click, and arrows scroll instead of changing file", async ({ page }) => {
+  await openIn(page, "Documents", "report.pdf");
+  const pdf = page.locator(".viewer-pdf");
+  await expect(pdf.locator(".viewer-pdf-page")).toHaveCount(6);
+  await expect(pdf.locator(".viewer-pdf-page canvas").first()).toBeVisible();
+  await expect(page.locator(".viewer-meta")).toContainText("p. 1 / 6");
+  expect(await pdf.evaluate((el) => document.activeElement === el)).toBe(true);
+
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => pdf.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press("End");
+  await expect(page.locator(".viewer-meta")).toContainText("p. 6 / 6");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft");
   await expect(page.locator(".viewer-name")).toHaveText("report.pdf");
-  await expect(page.locator("iframe.viewer-pdf")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".viewer")).toHaveCount(0);
+  expect(await cursorName(page)).toBe("report.pdf");
+});
+
+test("video: focused on open, arrows seek, = changes and remembers the volume", async ({ page }) => {
+  await openIn(page, "Downloads", "clip.webm");
+  const video = page.locator("video.viewer-video");
+  expect(await video.evaluate((el) => document.activeElement === el)).toBe(true);
+  expect(await video.evaluate((el: HTMLVideoElement) => el.volume)).toBeCloseTo(0.8);
+
+  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
+  await page.keyboard.press("Space"); // pause so the clock doesn't move under us
+  await page.keyboard.press("ArrowDown"); // −1 min → start
+  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime)).toBeLessThan(0.5);
+  await page.keyboard.press("ArrowRight"); // +5 s → clamped to the 3 s duration
+  await expect(page.locator(".viewer-overlay")).toContainText("+5 s");
+  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime)).toBeGreaterThan(2.5);
+  await expect(page.locator(".viewer-name")).toHaveText("clip.webm"); // arrows never change file
+
+  await page.keyboard.press("=");
+  await expect(page.locator(".viewer-overlay")).toContainText("Volume 85%");
+  expect(await video.evaluate((el: HTMLVideoElement) => el.volume)).toBeCloseTo(0.85);
+  await expect.poll(async () => (await mockState(page)).prefs.videoVolume).toBe(0.85);
+
+  // ⌘→ goes to the next video, skipping installer.dmg.
+  await page.keyboard.press("Meta+ArrowRight");
+  await expect(page.locator(".viewer-name")).toHaveText("movie.mp4");
+  await expect(page.locator(".viewer-meta")).toContainText("2 / 2 videos");
+  await page.keyboard.press("Meta+ArrowLeft");
+  await expect(page.locator(".viewer-name")).toHaveText("clip.webm");
+
+  // The volume survives closing the viewer.
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".viewer")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".viewer-name")).toHaveText("clip.webm");
+  expect(await page.locator("video.viewer-video").evaluate((el: HTMLVideoElement) => el.volume)).toBeCloseTo(0.85);
+});
+
+test("photos: ←/→ skip files of other kinds", async ({ page }) => {
+  await openIn(page, "Pictures", "cat.png");
+  await expect(page.locator(".viewer-meta")).toContainText("2 / 3 photos");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".viewer-name")).toHaveText("Sunset.heic"); // not holiday.mp4
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator(".viewer-name")).toHaveText("beach.jpg");
+});
+
+test("F toggles fullscreen; Esc leaves fullscreen first, then closes", async ({ page }) => {
+  await openIn(page, "Pictures", "beach.jpg");
+  const viewer = page.locator(".viewer");
+  await page.keyboard.press("f");
+  await expect(viewer).toHaveClass(/fullscreen/);
+  expect((await mockState(page)).fullscreen).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(viewer).not.toHaveClass(/fullscreen/);
+  await expect(viewer).toBeVisible();
+  expect((await mockState(page)).fullscreen).toBe(false);
+  await page.keyboard.press("f");
+  await page.keyboard.press("F3"); // closing while fullscreen leaves fullscreen too
+  await expect(viewer).toHaveCount(0);
+  expect((await mockState(page)).fullscreen).toBe(false);
 });

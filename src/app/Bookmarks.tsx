@@ -1,36 +1,26 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import type { Bookmark } from "../ipc/types";
 import { fold } from "../panel/jump";
+import { prefs, updatePrefs } from "./settings";
 
-export interface Bookmark {
-  name: string;
-  path: string;
-}
+export type { Bookmark };
 
-const KEY = "mc.bookmarks";
-
+/** Saved bookmarks, or the defaults when none were ever saved. */
 export function loadBookmarks(home: string): Bookmark[] {
-  try {
-    const saved = localStorage.getItem(KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {
-    // fall through to defaults
-  }
-  return [
-    { name: "Home", path: home },
-    { name: "Desktop", path: `${home}/Desktop` },
-    { name: "Documents", path: `${home}/Documents` },
-    { name: "Downloads", path: `${home}/Downloads` },
-    { name: "Applications", path: "/Applications" },
-    { name: "Volumes", path: "/Volumes" },
-  ];
+  return (
+    prefs().bookmarks ?? [
+      { name: "Home", path: home },
+      { name: "Desktop", path: `${home}/Desktop` },
+      { name: "Documents", path: `${home}/Documents` },
+      { name: "Downloads", path: `${home}/Downloads` },
+      { name: "Applications", path: "/Applications" },
+      { name: "Volumes", path: "/Volumes" },
+    ]
+  );
 }
 
 export function saveBookmarks(list: Bookmark[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    // storage unavailable
-  }
+  void updatePrefs({ bookmarks: list });
 }
 
 interface Props {

@@ -3,7 +3,8 @@
 
 import { batch, createMemo, createSignal } from "solid-js";
 import { backend, joinPath } from "../ipc";
-import { isNavigable, type Entry, type PanelEvent, type PanelId } from "../ipc/types";
+import { isNavigable, type Entry, type PanelEvent, type PanelId, type PanelState } from "../ipc/types";
+import { appState, updateState } from "../app/settings";
 import { comparator, insertionIndex, sortEntries, type SortSpec } from "./sort";
 
 export const PARENT: Entry = {
@@ -15,20 +16,8 @@ export const PARENT: Entry = {
   hidden: false,
 };
 
-const STORAGE_KEY = (id: PanelId) => `mc.panel.${id}`;
-
-interface Persisted {
-  path: string;
-  sort: SortSpec;
-  showHidden: boolean;
-}
-
-function loadPersisted(id: PanelId): Partial<Persisted> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY(id)) ?? "{}");
-  } catch {
-    return {};
-  }
+function loadPersisted(id: PanelId): Partial<PanelState> {
+  return appState().panels?.[String(id) as "0" | "1"] ?? {};
 }
 
 export function basename(path: string): string {
@@ -70,12 +59,8 @@ export function createPanel(id: PanelId) {
   const visible = (e: Entry) => showHidden() || !e.hidden;
 
   function persist() {
-    const p: Persisted = { path: path(), sort: sort(), showHidden: showHidden() };
-    try {
-      localStorage.setItem(STORAGE_KEY(id), JSON.stringify(p));
-    } catch {
-      // storage unavailable: nothing to remember
-    }
+    const p: PanelState = { path: path(), sort: sort(), showHidden: showHidden() };
+    updateState({ panels: { [String(id)]: p } });
   }
 
   function resort(keepName?: string) {

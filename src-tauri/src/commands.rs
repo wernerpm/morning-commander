@@ -13,6 +13,7 @@ use crate::hub::{Hub, PanelSink};
 use crate::listing::{expand_tilde, home_dir as home};
 use crate::model::{ConflictChoice, OpEvent, OpKind, PanelEvent, TextPreview, VolumeInfo};
 use crate::ops::{self, OpSink, Ops};
+use crate::prefs::Prefs;
 use crate::text;
 use crate::volume;
 
@@ -130,4 +131,27 @@ pub async fn read_text(path: String, max_bytes: u64) -> Result<TextPreview, Stri
 pub async fn volume_info(path: String) -> Result<VolumeInfo, String> {
     let path = abs(&path)?;
     blocking(move || volume::volume_info(&path)).await
+}
+
+#[tauri::command]
+pub fn prefs_get(prefs: State<'_, Arc<Prefs>>) -> serde_json::Value {
+    prefs.prefs_get()
+}
+
+#[tauri::command]
+pub fn prefs_set(
+    prefs: State<'_, Arc<Prefs>>,
+    patch: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    prefs.prefs_set(&patch)
+}
+
+#[tauri::command]
+pub fn state_get(prefs: State<'_, Arc<Prefs>>) -> serde_json::Value {
+    prefs.state_get()
+}
+
+#[tauri::command]
+pub fn state_set(prefs: State<'_, Arc<Prefs>>, patch: serde_json::Value) -> Result<(), String> {
+    prefs.inner().state_set(&patch)
 }

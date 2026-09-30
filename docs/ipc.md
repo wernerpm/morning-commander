@@ -126,8 +126,12 @@ Errors are returned as rejected promises with a human-readable string.
 
 ## Viewer file access
 
-Media is loaded with `convertFileSrc(path)` (`asset://localhost/<percent-encoded path>`). The asset protocol is enabled in `tauri.conf.json` with scope `$HOME/**`, `/Volumes/**`, `/tmp/**`, `/private/**`, and the CSP allows `asset:` and `http://asset.localhost` in `img-src`, `media-src` and `frame-src`.
+Media is loaded with `convertFileSrc(path)` (`asset://localhost/<percent-encoded path>`). The asset protocol is enabled in `tauri.conf.json` with scope `$HOME/**`, `/Volumes/**`, `/tmp/**`, `/private/**`, and the CSP allows `asset:` and `http://asset.localhost` in `img-src`, `media-src` and `connect-src` (PDFs are `fetch`ed and rendered with PDF.js; its worker is bundled, `worker-src 'self' blob:`).
+
+## Window
+
+The viewer's fullscreen (`F`) is **window** fullscreen via `@tauri-apps/api/window` (`getCurrentWindow().setFullscreen` / `isFullscreen`), not a Rust command; `capabilities/default.json` grants `core:window:allow-set-fullscreen` and `core:window:allow-is-fullscreen`. In the `Backend` interface these are `setFullscreen(on)` and `isFullscreen()`.
 
 ## Browser mock
 
-`src/ipc/mock.ts` implements the same commands against an in-memory tree when `window.__TAURI_INTERNALS__` is absent. `pnpm dev` in a normal browser and the Playwright tests use it.
+`src/ipc/mock.ts` implements the same commands against an in-memory tree when `window.__TAURI_INTERNALS__` is absent. `pnpm dev` in a normal browser and the Playwright tests use it. Preferences, state and the fullscreen flag live in memory (`window.__mock.prefs`, `.state`, `.fullscreen`) and reset on reload. A few mock files are backed by real fixtures served by Vite from `tests/fixtures/` (`Documents/report.pdf`, `Downloads/clip.webm`, `Downloads/movie.mp4`, `Pictures/holiday.mp4`); other media URLs are `mock://…` and don't load.

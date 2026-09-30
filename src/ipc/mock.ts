@@ -3,7 +3,8 @@
 // Tests can reach it as `window.__mock` to simulate external FS changes.
 
 import type { Backend } from "./index";
-import type { ConflictChoice, Entry, PanelEvent, PanelId } from "./types";
+import { mergePatch } from "./mergePatch";
+import type { AppState, ConflictChoice, Entry, PanelEvent, PanelId, Preferences } from "./types";
 
 interface MockNode {
   kind: "file" | "dir";
@@ -11,12 +12,19 @@ interface MockNode {
   mtime: number;
   children?: Map<string, MockNode>;
   content?: string;
+  /** Real file served by the dev server (tests/fixtures), for media the viewer must load. */
+  url?: string;
 }
 
 const HOME = "/Users/demo";
 
 function file(size = 1234, content?: string): MockNode {
   return { kind: "file", size, mtime: Date.UTC(2026, 8, 1, 12), content };
+}
+
+/** A file whose bytes come from tests/fixtures (served by Vite in dev and e2e). */
+function fixture(name: string, size: number): MockNode {
+  return { ...file(size), url: `/tests/fixtures/${name}` };
 }
 
 function dir(children: Record<string, MockNode> = {}): MockNode {
@@ -36,12 +44,22 @@ function seed(): MockNode {
       demo: dir({
         ".zshrc": file(120, "export PATH=$PATH\n"),
         Documents: dir({
-          "report.pdf": file(84_000),
+          "report.pdf": fixture("pages.pdf", 1_897),
           "notes.md": file(300, "# Notes\n\nhello from the mock backend\n"),
           "budget.csv": file(900, "a,b\n1,2\n"),
         }),
-        Downloads: dir({ "movie.mp4": file(50_000_000), "archive.zip": file(3_000_000) }),
-        Pictures: dir({ "beach.jpg": file(2_000_000), "cat.png": file(500_000), "Sunset.heic": file(1_500_000) }),
+        Downloads: dir({
+          "movie.mp4": fixture("tiny.mp4", 26_143),
+          "clip.webm": fixture("tiny.webm", 29_139),
+          "installer.dmg": file(80_000_000),
+          "archive.zip": file(3_000_000),
+        }),
+        Pictures: dir({
+          "beach.jpg": file(2_000_000),
+          "cat.png": file(500_000),
+          "holiday.mp4": fixture("tiny.mp4", 26_143),
+          "Sunset.heic": file(1_500_000),
+        }),
         Music: dir({}),
         Many: dir(many),
         "readme.txt": file(42, "Morning Commander mock filesystem\n"),
@@ -61,6 +79,10 @@ class MockFs {
   subs = new Map<PanelId, { path: string; cb: (e: PanelEvent) => void }>();
   nextOp = 1;
   ops = new Map<number, { cancelled: boolean; answer: null | ((c: [ConflictChoice, boolean]) => void) }>();
+  // preferences.json / state.json as stored (without defaults), and window fullscreen.
+  prefs: Record<string, unknown> = {};
+  state: AppState = {};
+  fullscreen = false;
 
   freeName(dir: MockNode, name: string): string {
     const dot = name.lastIndexOf(".");
@@ -153,6 +175,8 @@ class MockFs {
 
 const fs = new MockFs();
 if (typeof window !== "undefined") (window as unknown as { __mock: MockFs }).__mock = fs;
+
+const PREF_DEFAULTS = { videoVolume: 0.8, cacheMaxBytes: 100 * 1024 * 1024, cacheMaxAgeDays: 180 };
 
 const delay = () => new Promise((r) => setTimeout(r, 5));
 
@@ -260,16 +284,25 @@ export const mockBackend: Backend = {
     return { free: 123 * 1024 ** 3, total: 494 * 1024 ** 3 };
   },
   async prefsGet() {
-    return { videoVolume: 0.8, cacheMaxBytes: 100 * 1024 * 1024, cacheMaxAgeDays: 180 };
+    return { ...PREF_DEFAULTS, ...structuredClone(fs.prefs) } as Preferences;
   },
-  async prefsSet() {
-    return { videoVolume: 0.8, cacheMaxBytes: 100 * 1024 * 1024, cacheMaxAgeDays: 180 };
+  async prefsSet(patch) {
+    fs.prefs = mergePatch(fs.prefs, patch);
+    return mockBackend.prefsGet();
   },
   async stateGet() {
-    return {};
+    return structuredClone(fs.state);
   },
-  async stateSet() {},
+  async stateSet(patch) {
+    fs.state = mergePatch(fs.state, patch);
+  },
+  async setFullscreen(on) {
+    fs.fullscreen = on;
+  },
+  async isFullscreen() {
+    return fs.fullscreen;
+  },
   fileUrl(path) {
-    return `mock://${path}`;
+    return fs.lookup(path)?.url ?? `mock://${path}`;
   },
 };

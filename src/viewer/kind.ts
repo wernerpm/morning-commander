@@ -37,3 +37,35 @@ export function viewKind(name: string): ViewKind {
   if (TEXT.has(ext)) return "text";
   return "other";
 }
+
+/**
+ * Files the viewer steps through together: "next" from a photo goes to the
+ * next photo, skipping videos and documents. Text and unknown files share a group.
+ */
+export type NavGroup = "image" | "video" | "audio" | "pdf" | "document";
+
+export function navGroup(kind: ViewKind): NavGroup {
+  return kind === "text" || kind === "other" ? "document" : kind;
+}
+
+/** Index of the previous/next/first/last file in `files` in the same group as `files[from]`. */
+export function stepInGroup(
+  groups: NavGroup[],
+  from: number,
+  to: "prev" | "next" | "first" | "last",
+): number {
+  const g = groups[from];
+  if (g === undefined) return from;
+  switch (to) {
+    case "prev":
+      for (let i = from - 1; i >= 0; i--) if (groups[i] === g) return i;
+      return from;
+    case "next":
+      for (let i = from + 1; i < groups.length; i++) if (groups[i] === g) return i;
+      return from;
+    case "first":
+      return groups.indexOf(g);
+    case "last":
+      return groups.lastIndexOf(g);
+  }
+}

@@ -16,7 +16,7 @@
 | 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
-| 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | NOT STARTED (planned) | [step-10](implementation-plan/step-10-media-viewers.md) |
+| 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (real-app check on macOS pending) | [step-10](implementation-plan/step-10-media-viewers.md) |
 | 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | NOT STARTED (planned, **top priority**) | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
 
 Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`release.md`](release.md) (build and publish), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
@@ -29,7 +29,7 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 
 1. **Step 11a/b — NAS: non-blocking streaming listings, then persistent JSON cache with stale-while-revalidate** ([step-11](implementation-plan/step-11-persistent-cache-nas.md)). Start by measuring the real NAS.
 2. **Step 11c — NAS freshness**: poll shown network directories (FSEvents doesn't work there).
-3. **Step 10 — Media viewers**: video player keys (seek ±5 s/±1 min, volume `=`/`-`, `F` fullscreen, volume persisted in `~/.morning-commander/preferences.json`), PDF.js viewer focused on open (also fixes the PDF focus trap), photo navigation ([step-10](implementation-plan/step-10-media-viewers.md)).
+3. **Step 10 — verify in the real app**: video seek/volume, PDF scroll, fullscreen toggle with `scripts/drive.mjs` on macOS ([step-10](implementation-plan/step-10-media-viewers.md)).
 4. **Step 11d — prefetch** subdirectories on the NAS.
 5. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
 6. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
