@@ -63,14 +63,32 @@ This also fixes the step-5 focus-trap limitation.
 
 Use the **window**: `getCurrentWindow().setFullscreen(!isFullscreen)` from `@tauri-apps/api/window` (needs the `core:window:allow-set-fullscreen` permission in `capabilities/default.json`). The viewer already fills the window, so window fullscreen = viewer fullscreen, and it avoids WKWebView's element-fullscreen quirks. `Esc` leaves fullscreen first, a second `Esc` closes the viewer. Closing the viewer while fullscreen also leaves fullscreen.
 
-### Preferences file
+### Preferences and state files (do this first)
 
-New Rust module `prefs.rs` and two commands (add to `docs/ipc.md`):
+**Decision (2026-09-30):** all persistent settings live in files under `~/.morning-commander/`, owned by Rust — **not** in `localStorage`. Reasons: Rust needs some settings before the webview exists (cache limits, polling, prefetch — step 11); `localStorage` is per-origin (dev `http://localhost:1420` and the bundled app keep separate copies) and hidden in `~/Library/WebKit/<app>/WebsiteData/…`, where it can be wiped; files are editable, backup-able and testable. `~/.morning-commander/` (not `~/Library/Application Support/…`) because it fits a keyboard-driven MC-style tool (MC uses `~/.config/mc/`).
+
+Layout:
+
+```
+~/.morning-commander/            0700; overridable with env MC_HOME (tests)
+  preferences.json   settings, rarely written: bookmarks, default sort, showHidden default,
+                     videoVolume, cacheMaxBytes, cacheMaxAgeDays, prefetch …
+  state.json         session state, written often: per-panel path/sort/showHidden, history
+  cache/             listing cache (step 11), excluded from Time Machine
+```
+
+- Keep preferences and state in separate files so frequent state writes can never corrupt settings.
+- **Migration:** on first launch (no `state.json`), the frontend reads `localStorage` keys `mc.panel.0`, `mc.panel.1`, `mc.bookmarks`, sends them to Rust (`prefs_set` / `state_set`), then removes them. After that `localStorage` isn't used.
+- State writes are debounced (~500 ms) and flushed on exit.
+
+New Rust module `prefs.rs` and commands (add to `docs/ipc.md`):
 
 | Command | Args | Returns |
 |---|---|---|
 | `prefs_get` | — | `Preferences` |
 | `prefs_set` | `patch: Partial<Preferences>` | `Preferences` |
+| `state_get` | — | `AppState` |
+| `state_set` | `patch: Partial<AppState>` | `void` (debounced write) |
 
 ```ts
 interface Preferences {
@@ -82,7 +100,7 @@ interface Preferences {
 - Stored at `~/.morning-commander/preferences.json` (create the dir with `0700`). Atomic write (temp file + rename). Unknown fields are preserved (forward compatible).
 - Loaded once at startup; the frontend keeps a copy and sends patches.
 - The mock backend keeps preferences in memory.
-- Later: move bookmarks and panel state from `localStorage` here so they survive WebView data resets.
+- Bookmarks move to `preferences.json`; panel path/sort/hidden + history move to `state.json` (replacing `localStorage` in `src/panel/store.ts` and `src/app/Bookmarks.tsx`).
 
 ## Tests
 

@@ -56,6 +56,7 @@ Takeaways:
   ```
   `[name, kind f|d|l|o, size, mtime, flags(bit0 hidden, bit1 targetIsDir)]`.
 - Files are written atomically (temp + rename), mode `0600` (file names on the NAS are private data).
+- **Exclude `cache/` from Time Machine** when creating it (set `NSURLIsExcludedFromBackupKey` / the `com.apple.metadata:com_apple_backup_excludeItem` xattr, as `tmutil addexclusion` does): 100 MB of churning JSON shouldn't be backed up. The cache must be safe to delete at any time.
 - A `version` field; on mismatch the cache is discarded, never migrated.
 
 ### Size limit and eviction

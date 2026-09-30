@@ -52,6 +52,7 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 - **Sorting** uses precomputed natural-sort keys, not `Intl.Collator` (10× faster at 100k).
 - **Snapshot is sent in one piece** (JSON over a Tauri channel); the two-stage snapshot wasn't needed.
 - **Real-app testing** via `tauri-plugin-webdriver` behind the `webdriver` cargo feature.
+- **Settings move out of `localStorage`** into `~/.morning-commander/{preferences.json,state.json}` owned by Rust, with the listing cache in `~/.morning-commander/cache/` excluded from Time Machine (step 10 "Preferences and state files", step 11). Today panel state and bookmarks are still in `localStorage`.
 - Open questions below (rename key, jump semantics) were implemented as proposed: `⌘R`/`⇧F6`/`F2`, prefix type-ahead with same-letter cycling.
 
 ---
