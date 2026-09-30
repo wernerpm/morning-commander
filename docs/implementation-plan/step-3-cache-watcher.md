@@ -71,3 +71,7 @@ FSEvents ─▶ notify (NonRecursive) ─▶ notify-debouncer-full (100 ms, NoCa
 - **Rename across watched directories** shows up as a removal in one directory and an addition in the other. That's correct, but the frontend can't keep the cursor on the moved file.
 - The cache capacity is by directory count only. Add an entry-count budget (e.g. 500k entries) if memory matters.
 - Snapshots of very large directories are one JSON message. Split into two stages (names first, then attributes) if profiling shows > 100 ms for 100k entries.
+
+## Liveness backstop (added after CI flakiness)
+
+FSEvents doesn't reliably emit an event for the deletion of a directory that is itself watched non-recursively (`deleted_directory_reopens_on_ancestor` failed 2 of 3 times on GitHub's macOS runners, never locally). `Hub::new` therefore starts an `mc-liveness` thread that every second checks each panel's directory with `is_dir()` and, for missing ones, injects a `WatchBatch { paths: [dir] }` into the watcher channel. The normal "gone" handling then evicts the cache entry and re-opens the panel on the nearest existing ancestor. This also covers ejected volumes.

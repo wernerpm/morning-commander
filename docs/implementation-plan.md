@@ -19,6 +19,18 @@
 
 Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
 
+### Next up (good tasks for an agent)
+
+Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, the mock backend and the tests in sync.
+
+1. **PDF focus trap** — clicking into a PDF iframe steals keys (Esc stops working). Bundle PDF.js or re-focus the document on iframe focus ([step-5](implementation-plan/step-5-viewer.md)).
+2. **Network volumes** — detect non-local filesystems (`statfs` `f_fstypename`) and poll the visible directory every ~3 s instead of relying on FSEvents ([step-3](implementation-plan/step-3-cache-watcher.md)).
+3. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
+4. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
+5. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
+6. **Compact wire format** for huge listings (10 MB JSON for 100k entries) — only if profiling says so.
+7. **Release workflow** — Developer ID signing + notarisation on tag ([step-9](implementation-plan/step-9-packaging.md)).
+
 ### Measured (dev build, M-series Mac)
 
 | Scenario | Result |
