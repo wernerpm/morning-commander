@@ -18,11 +18,21 @@ const PARALLEL_THRESHOLD: usize = 2_000;
 
 /// macOS `UF_HIDDEN` flag (`chflags hidden`).
 #[cfg(target_os = "macos")]
-const UF_HIDDEN: u32 = 0x8000;
+pub(crate) const UF_HIDDEN: u32 = 0x8000;
+
+#[cfg(target_os = "macos")]
+#[path = "listing_macos.rs"]
+mod macos;
 
 /// NFC-normalised display form of a file name. macOS often stores names in NFD.
 pub fn display_name(name: &OsStr) -> String {
-    name.to_string_lossy().nfc().collect()
+    let s = name.to_string_lossy();
+    // ASCII is always in NFC; skip the normaliser for the common case.
+    if s.is_ascii() {
+        s.into_owned()
+    } else {
+        s.nfc().collect()
+    }
 }
 
 /// Expand a leading `~` to `$HOME`.
@@ -129,7 +139,29 @@ pub fn read_names(dir: &Path) -> io::Result<Vec<OsString>> {
 }
 
 /// Read and stat every child of `dir`. Children that vanish mid-read are skipped.
+///
+/// On macOS this uses `getattrlistbulk` (one syscall per few thousand entries) and
+/// falls back to the portable path if the filesystem doesn't support it.
 pub fn read_listing(dir: &Path) -> io::Result<Vec<Entry>> {
+    #[cfg(target_os = "macos")]
+    match macos::read_listing_bulk(dir) {
+        Ok(entries) => return Ok(entries),
+        Err(e)
+            if e.kind() == io::ErrorKind::NotFound
+                || e.kind() == io::ErrorKind::PermissionDenied =>
+        {
+            return Err(e);
+        }
+        Err(e) => log::debug!(
+            "getattrlistbulk failed for {}: {e}; using readdir",
+            dir.display()
+        ),
+    }
+    read_listing_portable(dir)
+}
+
+/// `readdir` + one `lstat` per child (parallel for large directories).
+pub fn read_listing_portable(dir: &Path) -> io::Result<Vec<Entry>> {
     let names = read_names(dir)?;
     let entries = if names.len() > PARALLEL_THRESHOLD {
         names
