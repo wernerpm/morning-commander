@@ -118,7 +118,7 @@ class MockFs {
       node = this.lookup(p);
     }
     const entries = [...node.children!].map(([name, n]) => this.entry(name, n));
-    return { type: "snapshot", path: p, parent: this.parentOf(p), entries };
+    return { type: "snapshot", path: p, parent: this.parentOf(p), entries, stale: false, network: false };
   }
 
   notify(dirPath: string, removed: string[], upsertedNames: string[]) {
@@ -259,6 +259,16 @@ export const mockBackend: Backend = {
   async volumeInfo() {
     return { free: 123 * 1024 ** 3, total: 494 * 1024 ** 3 };
   },
+  async prefsGet() {
+    return { videoVolume: 0.8, cacheMaxBytes: 100 * 1024 * 1024, cacheMaxAgeDays: 180 };
+  },
+  async prefsSet() {
+    return { videoVolume: 0.8, cacheMaxBytes: 100 * 1024 * 1024, cacheMaxAgeDays: 180 };
+  },
+  async stateGet() {
+    return {};
+  },
+  async stateSet() {},
   fileUrl(path) {
     return `mock://${path}`;
   },

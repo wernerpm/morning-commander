@@ -1,6 +1,8 @@
 import { isNavigable, type Entry } from "../ipc/types";
 
-export type SortKey = "name" | "ext" | "size" | "mtime" | "none";
+import type { SortKey } from "../ipc/types";
+
+export type { SortKey };
 
 export interface SortSpec {
   key: SortKey;

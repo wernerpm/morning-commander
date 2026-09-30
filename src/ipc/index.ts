@@ -2,14 +2,26 @@
 // in-memory mock when running outside Tauri (plain browser, Playwright).
 
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { ConflictChoice, OpEvent, OpKind, PanelEvent, PanelId, TextPreview, VolumeInfo } from "./types";
+import type {
+  AppState,
+  ConflictChoice,
+  MergePatch,
+  OpEvent,
+  OpKind,
+  PanelEvent,
+  PanelId,
+  Preferences,
+  TextPreview,
+  VolumeInfo,
+} from "./types";
 import { mockBackend } from "./mock";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export interface Backend {
-  panelOpen(panel: PanelId, path: string, onEvent: (e: PanelEvent) => void): Promise<void>;
+  /** `refresh` forces a full re-read even when a cached listing looks current. */
+  panelOpen(panel: PanelId, path: string, onEvent: (e: PanelEvent) => void, refresh?: boolean): Promise<void>;
   homeDir(): Promise<string>;
   rename(dir: string, from: string, to: string): Promise<void>;
   mkdir(dir: string, name: string): Promise<void>;
@@ -20,14 +32,18 @@ export interface Backend {
   openDefault(path: string): Promise<void>;
   readText(path: string, maxBytes: number): Promise<TextPreview>;
   volumeInfo(path: string): Promise<VolumeInfo>;
+  prefsGet(): Promise<Preferences>;
+  prefsSet(patch: MergePatch<Preferences>): Promise<Preferences>;
+  stateGet(): Promise<AppState>;
+  stateSet(patch: MergePatch<AppState>): Promise<void>;
   fileUrl(path: string): string;
 }
 
 const tauriBackend: Backend = {
-  async panelOpen(panel, path, onEvent) {
+  async panelOpen(panel, path, onEvent, refresh = false) {
     const ch = new Channel<PanelEvent>();
     ch.onmessage = onEvent;
-    await invoke("panel_open", { panel, path, onEvent: ch });
+    await invoke("panel_open", { panel, path, refresh, onEvent: ch });
   },
   homeDir: () => invoke<string>("home_dir"),
   rename: (dir, from, to) => invoke("rename", { dir, from, to }),
@@ -43,6 +59,10 @@ const tauriBackend: Backend = {
   openDefault: (path) => invoke("open_default", { path }),
   readText: (path, maxBytes) => invoke<TextPreview>("read_text", { path, maxBytes }),
   volumeInfo: (path) => invoke<VolumeInfo>("volume_info", { path }),
+  prefsGet: () => invoke<Preferences>("prefs_get"),
+  prefsSet: (patch) => invoke<Preferences>("prefs_set", { patch }),
+  stateGet: () => invoke<AppState>("state_get"),
+  stateSet: (patch) => invoke("state_set", { patch }),
   fileUrl: (path) => convertFileSrc(path),
 };
 

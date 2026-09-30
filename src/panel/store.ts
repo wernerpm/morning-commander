@@ -180,6 +180,7 @@ export function createPanel(id: PanelId) {
           }
         }
         else if (ev.type === "patch") applyPatch(ev);
+        else if (ev.type === "fresh") return; // stale/fresh indicator: step 11b
         else {
           setLoading(false);
           setError(ev.message);

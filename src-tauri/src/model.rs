@@ -34,11 +34,19 @@ pub enum PanelEvent {
         path: String,
         parent: Option<String>,
         entries: Vec<Entry>,
+        /// From a cache that may be out of date; a `Fresh` follows once revalidated.
+        stale: bool,
+        /// The directory is on a network volume (or `MC_FORCE_NETWORK=1`).
+        network: bool,
     },
     Patch {
         path: String,
         removed: Vec<String>,
         upserted: Vec<Entry>,
+    },
+    /// Background revalidation of a stale snapshot finished (after any `Patch`).
+    Fresh {
+        path: String,
     },
     Error {
         path: String,

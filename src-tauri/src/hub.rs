@@ -227,6 +227,8 @@ impl Hub {
             path,
             parent,
             entries,
+            stale: false,
+            network: false,
         });
         s.panels.insert(panel, Subscription { dir, sink });
         self.gc(s);
@@ -453,6 +455,7 @@ mod tests {
                     path,
                     parent,
                     entries,
+                    ..
                 } => {
                     assert_eq!(path, dir.to_str().unwrap());
                     assert!(parent.is_some());

@@ -31,8 +31,9 @@ interface Entry {
 }
 
 type PanelEvent =
-  | { type: "snapshot"; path: string; parent: string | null; entries: Entry[] }
+  | { type: "snapshot"; path: string; parent: string | null; entries: Entry[]; stale: boolean; network: boolean }
   | { type: "patch"; path: string; removed: string[]; upserted: Entry[] }
+  | { type: "fresh"; path: string }                 // revalidation of a stale snapshot finished
   | { type: "error"; path: string; message: string };
 
 type OpKind = "copy" | "move";
@@ -53,12 +54,59 @@ interface TextPreview { text: string; truncated: boolean; binary: boolean; size:
 - `snapshot.parent` is `null` at `/`. The frontend renders a synthetic `..` row when it isn't null; Rust never sends `..`.
 - `patch.upserted` contains full entries for created or changed names; `removed` lists names that no longer exist. A rename arrives as one removal plus one upsert in the same patch.
 - Events for a path the panel has already navigated away from must be ignored by the frontend (compare `path`).
+- `snapshot.stale` is `true` when the listing came from a cache that may be out of date: the on-disk cache (after a relaunch), or the memory cache of a **network** directory (FSEvents doesn't work there). Rust revalidates it in the background, sends any differences as a `patch`, then exactly one `fresh` for that path. The panel shows "↻" in its footer between the two. A stale snapshot whose revalidation fails (directory unreachable) gets no `fresh`; if the directory is gone, the usual fallback to the nearest ancestor applies.
+- `snapshot.network` is `true` when the directory is on a network volume (`statfs`: not `MNT_LOCAL`, or smbfs/nfs/afpfs/webdav), or when the app runs with `MC_FORCE_NETWORK=1` (testing). The footer shows a "NAS" badge.
+
+### Stale-while-revalidate (step 11b)
+
+| Source of the listing | `stale` | Background revalidation |
+|---|---|---|
+| Memory cache, local volume | `false` | none (FSEvents keeps it current) |
+| Memory cache, network volume | `true` | `stat` the directory; mtime unchanged → `fresh`; changed → full re-read → `patch` → `fresh` |
+| Disk cache, local volume | `true` | full re-read → `patch` (if different) → `fresh` |
+| Disk cache, network volume | `true` | as for the memory cache on a network volume |
+| Not cached | `false` | none (read before the snapshot is sent) |
+| any, with `refresh: true` | `true` if cached | always a full re-read (no mtime shortcut) |
+
+## Preferences and state
+
+Two JSON files under `~/.morning-commander/` (directory `0700`, files `0600`, written atomically; `MC_HOME` overrides the directory, used by tests). Rust owns them; the frontend loads both once at startup (before rendering) and sends patches.
+
+```ts
+interface Bookmark { name: string; path: string }
+
+interface Preferences {          // preferences.json: settings, rarely written
+  bookmarks?: Bookmark[];        // absent → the frontend's defaults (Home, Desktop, …)
+  videoVolume: number;           // 0..1, default 0.8 (step 10)
+  cacheMaxBytes: number;         // default 104857600 (100 MiB); listing cache limit
+  cacheMaxAgeDays: number;       // default 180; unvisited longer → evicted
+  [key: string]: unknown;        // unknown fields are preserved
+}
+
+interface PanelState { path: string; sort: { key: SortKey; desc: boolean }; showHidden: boolean }
+
+interface AppState {             // state.json: session state, written often
+  panels?: { "0"?: PanelState; "1"?: PanelState };
+  localStorageMigrated?: boolean; // set once the pre-files localStorage data was imported
+  [key: string]: unknown;
+}
+```
+
+- `prefs_set` / `state_set` take a **JSON merge patch** (RFC 7386): objects merge recursively, `null` deletes a key, arrays and scalars replace. So `state_set({ panels: { "1": {...} } })` leaves panel 0 alone.
+- `prefs_get` fills in defaults for missing known keys; the file itself only stores what was set.
+- `prefs_set` writes immediately. `state_set` updates memory and writes after ~500 ms of quiet (debounced), and on exit.
+- A corrupt file is renamed to `*.corrupt` and treated as empty (never fatal).
+- **Migration from `localStorage`:** at startup, if `state.localStorageMigrated` is not `true`, the frontend imports `localStorage` keys `mc.panel.0`, `mc.panel.1` (→ `state.panels`) and `mc.bookmarks` (→ `prefs.bookmarks`), without overwriting values already in the files, then sets `localStorageMigrated: true` and removes the keys. After that `localStorage` isn't used. (A flag rather than "state.json is missing" because the dev server origin and the bundled app have separate `localStorage`s but share the files.)
+
+## Listing cache on disk (step 11b)
+
+`~/.morning-commander/cache/` (excluded from Time Machine; safe to delete at any time) holds `index.json` and one file per directory in `dirs/`. It is internal to Rust and not part of the IPC surface; see [step 11](implementation-plan/step-11-persistent-cache-nas.md).
 
 ## Commands
 
 | Command | Args | Returns | Notes |
 |---|---|---|---|
-| `panel_open` | `panel: 0 \| 1, path: string, onEvent: Channel<PanelEvent>` | `void` | Replaces that panel's subscription. Sends one `snapshot` (or `error`), then `patch`es while subscribed. `path` may start with `~`. |
+| `panel_open` | `panel: 0 \| 1, path: string, refresh: boolean, onEvent: Channel<PanelEvent>` | `void` | Replaces that panel's subscription. Sends one `snapshot` (or `error`), then `patch`es (and one `fresh` after a stale snapshot) while subscribed. `path` may start with `~`. `refresh: true` (⇧⌘R) forces a full re-read even when a cached listing looks current. Returns once the snapshot is sent; revalidation continues in the background. |
 | `home_dir` | — | `string` | |
 | `rename` | `dir, from, to: string` | `void` | Errors if `to` exists (case-only renames allowed). Validates the name. |
 | `mkdir` | `dir, name: string` | `void` | |
@@ -69,6 +117,10 @@ interface TextPreview { text: string; truncated: boolean; binary: boolean; size:
 | `open_default` | `path: string` | `void` | macOS `open` |
 | `volume_info` | `path: string` | `{ free: number; total: number }` | `statvfs` of the volume containing `path` (bytes; `free` = available to the user) |
 | `read_text` | `path: string, maxBytes: number` | `TextPreview` | For the text viewer |
+| `prefs_get` | — | `Preferences` | Defaults filled in |
+| `prefs_set` | `patch: object` | `Preferences` | JSON merge patch; written immediately; returns the result |
+| `state_get` | — | `AppState` | |
+| `state_set` | `patch: object` | `void` | JSON merge patch; debounced write |
 
 Errors are returned as rejected promises with a human-readable string.
 

@@ -12,8 +12,9 @@ export interface Entry {
 }
 
 export type PanelEvent =
-  | { type: "snapshot"; path: string; parent: string | null; entries: Entry[] }
+  | { type: "snapshot"; path: string; parent: string | null; entries: Entry[]; stale: boolean; network: boolean }
   | { type: "patch"; path: string; removed: string[]; upserted: Entry[] }
+  | { type: "fresh"; path: string }
   | { type: "error"; path: string; message: string };
 
 export type OpKind = "copy" | "move";
@@ -52,3 +53,35 @@ export interface VolumeInfo {
   free: number;
   total: number;
 }
+
+export interface Bookmark {
+  name: string;
+  path: string;
+}
+
+export type SortKey = "name" | "ext" | "size" | "mtime" | "none";
+
+/** preferences.json. `prefs_get` fills in defaults; unknown keys are preserved. */
+export interface Preferences {
+  bookmarks?: Bookmark[];
+  videoVolume: number;
+  cacheMaxBytes: number;
+  cacheMaxAgeDays: number;
+  [key: string]: unknown;
+}
+
+export interface PanelState {
+  path: string;
+  sort: { key: SortKey; desc: boolean };
+  showHidden: boolean;
+}
+
+/** state.json. */
+export interface AppState {
+  panels?: { "0"?: PanelState; "1"?: PanelState };
+  localStorageMigrated?: boolean;
+  [key: string]: unknown;
+}
+
+/** RFC 7386 JSON merge patch: objects merge, null deletes, everything else replaces. */
+export type MergePatch<T> = { [K in keyof T]?: (T[K] extends object ? MergePatch<T[K]> | T[K] : T[K]) | null };

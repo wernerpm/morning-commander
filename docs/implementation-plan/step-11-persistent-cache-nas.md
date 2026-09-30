@@ -28,8 +28,21 @@ Measured on one ~4.3k-entry directory of the share (release build, `bench_listin
 | portable (readdir + lstat per entry) | ~63 ms |
 | JSON encoding | < 1 ms (≈ 660 KB) |
 
+**Cold** measurements (2026-09-30, same ~4.3k-entry directory, release build; "cold" = first listing after unmounting and remounting the share, or after ≥ 60 s without touching the directory):
+
+| What | Cold | Warm |
+|---|---|---|
+| `read_listing` (`getattrlistbulk`) | **~8.6 s** (8.67 s after remount; 8.57 s after 60 s idle) | 2.5–7 ms |
+| names only (`readdir`, no attributes) | ~9.6 s | — |
+| portable (readdir + `lstat` per entry) | ~38.6 s | ~46 ms |
+| `stat` of the directory itself | **~30 ms** | < 0.1 ms |
+
+- The macOS SMB client forgets the listing within a minute, so **every** revisit after a short pause costs ~8.6 s today, not just the first visit after mounting.
+- The time is the server enumerating the directory (names alone take as long), so no client-side listing trick helps; only not listing does: the persistent cache plus the directory-mtime shortcut (one ~30 ms `stat`).
+- **Dir-mtime shortcut verified on this NAS:** creating, renaming and deleting a child each changed the directory's mtime, and the server's value matched after the client cache expired.
+
 Takeaways:
-- Warm listings are already fast; the pain is **cold** listings (first visit after mount/launch, or after the SMB client cache expires) and whatever Finder does on top. Still to measure: a cold listing (e.g. right after remounting the share) and Finder's time for the same directory.
+- Warm listings are already fast; the pain is **cold** listings (first visit after mount/launch, or after the SMB client cache expires) and whatever Finder does on top. (Cold numbers above.)
 - At 5–10k entries a directory is ≈ 0.4–0.8 MB of JSON today, ≈ 0.2–0.4 MB with the compact encoding below, so the 100 MB cache holds a few hundred large media directories — enough to keep the whole library's structure warm.
 - `getattrlistbulk` works on this SMB share (6× faster than per-entry stat); keep it as the primary path.
 - Streaming (phase 11a) matters less at this size than stale-while-revalidate (11b); consider doing 11b first.
@@ -155,5 +168,5 @@ src/panel/store.ts           stale/fresh/append handling, footer indicators
 ## Open questions
 
 - ~~Protocol, mount location, directory sizes~~ — answered: SMB, `/Volumes/<share>`, 5k–10k entries.
-- Is the dir-mtime shortcut safe on this NAS? (SMB servers normally update a directory's mtime on create/delete/rename of children; verify with the real share.)
+- ~~Is the dir-mtime shortcut safe on this NAS?~~ — yes (verified 2026-09-30, see measurements).
 - Should the cache also remember per-directory cursor position and sort?
