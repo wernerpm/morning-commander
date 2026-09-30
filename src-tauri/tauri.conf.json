@@ -24,7 +24,12 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$HOME/**", "/Volumes/**", "/tmp/**", "/private/**"],
+          "allow": [
+            "$HOME/**",
+            "/Volumes/**",
+            "/tmp/**",
+            "/private/**"
+          ],
           "requireLiteralLeadingDot": false
         }
       }
@@ -32,13 +37,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+      "icons/icon.png"
+    ],
+    "category": "public.app-category.utilities",
+    "copyright": "\u00a9 2026 Werner Moraes. Apache License 2.0.",
+    "shortDescription": "Dual-pane file manager for macOS",
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
   }
 }

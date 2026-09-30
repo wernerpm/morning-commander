@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d2f5c"/>
+      <stop offset="0.55" stop-color="#3d6fd1"/>
+      <stop offset="1" stop-color="#f4a15c"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff4c2"/>
+      <stop offset="0.7" stop-color="#ffc857"/>
+      <stop offset="1" stop-color="#ff9f43"/>
+    </radialGradient>
+    <clipPath id="squircle">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#sky)"/>
+    <circle cx="512" cy="560" r="170" fill="url(#sun)"/>
+    <!-- two panels -->
+    <g>
+      <rect x="170" y="520" width="327" height="340" rx="22" fill="#1b1d21" opacity="0.94"/>
+      <rect x="527" y="520" width="327" height="340" rx="22" fill="#1b1d21" opacity="0.94"/>
+      <rect x="170" y="520" width="327" height="340" rx="22" fill="none" stroke="#6ea8ff" stroke-width="10"/>
+      <!-- rows -->
+      <rect x="200" y="566" width="200" height="22" rx="6" fill="#8cc2ff"/>
+      <rect x="200" y="612" width="240" height="22" rx="6" fill="#8cc2ff"/>
+      <rect x="190" y="652" width="287" height="38" rx="8" fill="#2f5da8"/>
+      <rect x="200" y="660" width="170" height="22" rx="6" fill="#ffffff"/>
+      <rect x="200" y="712" width="210" height="22" rx="6" fill="#d6d8dc"/>
+      <rect x="200" y="758" width="150" height="22" rx="6" fill="#d6d8dc"/>
+      <rect x="557" y="566" width="180" height="22" rx="6" fill="#8cc2ff"/>
+      <rect x="557" y="612" width="230" height="22" rx="6" fill="#d6d8dc"/>
+      <rect x="557" y="658" width="160" height="22" rx="6" fill="#d6d8dc"/>
+      <rect x="557" y="704" width="250" height="22" rx="6" fill="#d6d8dc"/>
+      <rect x="557" y="750" width="120" height="22" rx="6" fill="#f2c55c"/>
+    </g>
+  </g>
+</svg>
