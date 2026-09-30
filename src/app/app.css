@@ -409,3 +409,45 @@ body,
   justify-self: end;
   font: 12px var(--font-ui);
 }
+
+.modal.bookmarks input {
+  width: 100%;
+  font: 13px var(--font-ui);
+  padding: 6px 8px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+}
+
+.bookmarks ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.bookmarks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 2ch;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.bookmarks li.current {
+  background: var(--cursor-bg);
+  color: var(--cursor-fg);
+}
+
+.bookmarks li.current .muted {
+  color: var(--cursor-fg);
+  opacity: 0.8;
+}
+
+.bookmarks .hint {
+  margin: 12px 0 0;
+  font-size: 11px;
+}

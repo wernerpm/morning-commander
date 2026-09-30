@@ -121,3 +121,27 @@ test("external changes appear without refresh", async ({ page }) => {
   await expect(panel(page, 0).locator('.row[data-name="appeared.txt"]')).toBeVisible();
   await expect(panel(page, 1).locator('.row[data-name="appeared.txt"]')).toBeVisible();
 });
+
+test("Cmd+[ and Cmd+] move through history", async ({ page }) => {
+  await page.keyboard.type("doc", { delay: 30 });
+  await page.keyboard.press("Enter");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo/Documents");
+  await page.keyboard.press("Meta+[");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo");
+  await page.keyboard.press("Meta+]");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo/Documents");
+});
+
+test("bookmarks: add current folder, filter, open", async ({ page }) => {
+  await page.keyboard.type("pic", { delay: 30 });
+  await page.keyboard.press("Enter");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo/Pictures");
+  await page.keyboard.press("Meta+Shift+d");
+  await page.keyboard.press("Backspace");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo");
+  await page.keyboard.press("Meta+d");
+  await page.keyboard.type("pictu");
+  await expect(page.locator(".bookmarks li")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo/Pictures");
+});

@@ -9,6 +9,7 @@ export type CommandId =
   | "select.toggle" | "select.all" | "select.none"
   | "file.view" | "file.edit" | "file.openDefault" | "file.rename"
   | "file.copy" | "file.move" | "file.mkdir" | "file.trash"
+  | "history.back" | "history.forward" | "bookmarks.open" | "bookmarks.add"
   | "app.help";
 
 export interface Command {
@@ -33,6 +34,10 @@ export const COMMANDS: Command[] = [
   { id: "panel.goto", title: "Go to path", keys: ["Meta+L", "Meta+Shift+G"] },
   { id: "panel.home", title: "Home directory", keys: ["Meta+Shift+H"] },
   { id: "panel.refresh", title: "Re-read directory", keys: ["Meta+Shift+R"] },
+  { id: "history.back", title: "Back", keys: ["Meta+["] },
+  { id: "history.forward", title: "Forward", keys: ["Meta+]"] },
+  { id: "bookmarks.open", title: "Bookmarks", keys: ["Meta+D"] },
+  { id: "bookmarks.add", title: "Bookmark this folder", keys: ["Meta+Shift+D"] },
   { id: "sort.name", title: "Sort by name", keys: ["Meta+1"] },
   { id: "sort.ext", title: "Sort by extension", keys: ["Meta+2"] },
   { id: "sort.size", title: "Sort by size", keys: ["Meta+3"] },
@@ -64,13 +69,15 @@ export function chord(ev: KeyboardEvent): string {
   else if (ev.code === "Period") key = ".";
   else if (ev.code === "Equal") key = "=";
   else if (ev.code === "Slash") key = "/";
+  else if (ev.code === "BracketLeft") key = "[";
+  else if (ev.code === "BracketRight") key = "]";
   else if (key === " ") key = "Space";
   const mods: string[] = [];
   if (ev.metaKey) mods.push("Meta");
   if (ev.ctrlKey) mods.push("Ctrl");
   if (ev.altKey) mods.push("Alt");
   if (ev.shiftKey && key.length > 1) mods.push("Shift");
-  else if (ev.shiftKey && /^[A-Z0-9.=/]$/.test(key)) mods.push("Shift");
+  else if (ev.shiftKey && /^[A-Z0-9.=/[\]]$/.test(key)) mods.push("Shift");
   return [...mods, key].join("+");
 }
 

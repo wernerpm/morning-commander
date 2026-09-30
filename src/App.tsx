@@ -1,4 +1,5 @@
 import { batch, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import Bookmarks, { loadBookmarks, saveBookmarks, type Bookmark } from "./app/Bookmarks";
 import Dialog, { type DialogSpec } from "./app/Dialog";
 import OpProgress, { type OpState } from "./app/OpProgress";
 import { backend } from "./ipc";
@@ -31,6 +32,8 @@ export default function App() {
   const [op, setOp] = createSignal<OpState | null>(null);
   const [message, setMessage] = createSignal<{ text: string; error: boolean } | null>(null);
   const [help, setHelp] = createSignal(false);
+  const [bookmarks, setBookmarks] = createSignal<Bookmark[]>([]);
+  const [showBookmarks, setShowBookmarks] = createSignal(false);
   const [viewer, setViewer] = createSignal<{ panel: PanelId; files: string[]; index: number } | null>(null);
 
   const cur = () => panels[active()];
@@ -51,6 +54,7 @@ export default function App() {
 
   onMount(async () => {
     const home = await backend.homeDir();
+    setBookmarks(loadBookmarks(home));
     await Promise.all(panels.map((p) => p.open(p.initialPath || home)));
   });
 
@@ -255,15 +259,29 @@ export default function App() {
     "file.move": () => copyMove("move"),
     "file.mkdir": mkdir,
     "file.trash": trash,
+    "history.back": () => cur().goBack(),
+    "history.forward": () => cur().goForward(),
+    "bookmarks.open": () => setShowBookmarks(true),
+    "bookmarks.add": () => {
+      const path = cur().path();
+      if (bookmarks().some((b) => b.path === path)) return flash("Already bookmarked");
+      updateBookmarks([...bookmarks(), { name: basename(path) || "/", path }]);
+      flash(`Bookmarked ${path}`);
+    },
     "app.help": () => setHelp((h) => !h),
   };
+
+  function updateBookmarks(list: Bookmark[]) {
+    setBookmarks(list);
+    saveBookmarks(list);
+  }
 
   function pageSize(): number {
     return (cur() as unknown as { pageSize?: number }).pageSize ?? 20;
   }
 
   function onKeyDown(ev: KeyboardEvent) {
-    if (viewer() || dialog() || renaming()) return; // they own the keyboard
+    if (viewer() || dialog() || renaming() || showBookmarks()) return; // they own the keyboard
     if (help()) {
       if (ev.key === "Escape" || ev.key === "F1") {
         ev.preventDefault();
@@ -359,6 +377,14 @@ export default function App() {
       <Show when={op()}>{(o) => <OpProgress op={o()} onCancel={() => void backend.cancelOp(o().id)} />}</Show>
       <Show when={viewer()}>
         {(v) => <Viewer files={v().files} index={v().index} onClose={closeViewer} />}
+      </Show>
+      <Show when={showBookmarks()}>
+        <Bookmarks
+          bookmarks={bookmarks()}
+          onOpen={(path) => void cur().open(path)}
+          onRemove={(b) => updateBookmarks(bookmarks().filter((x) => x !== b))}
+          onClose={() => setShowBookmarks(false)}
+        />
       </Show>
       <Show when={dialog()}>{(d) => <Dialog spec={d()} onClose={() => setDialog(null)} />}</Show>
       <Show when={help()}>

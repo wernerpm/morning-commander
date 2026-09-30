@@ -58,6 +58,10 @@ export function createPanel(id: PanelId) {
   let expectedName: string | null = null;
   // Monotonic token so late events from an old subscription are dropped.
   let generation = 0;
+  // Back/forward history of visited paths.
+  const back: string[] = [];
+  const forward: string[] = [];
+  let historyNav = false;
 
   const rows = createMemo<Entry[]>(() => (parent() !== null ? [PARENT, ...sorted()] : sorted()));
   const current = createMemo<Entry | undefined>(() => rows()[cursor()]);
@@ -93,6 +97,12 @@ export function createPanel(id: PanelId) {
   function applySnapshot(e: Extract<PanelEvent, { type: "snapshot" }>) {
     const map = new Map(e.entries.map((x) => [x.name, x]));
     const samePath = e.path === path();
+    if (!samePath && path() && !historyNav) {
+      back.push(path());
+      if (back.length > 100) back.shift();
+      forward.length = 0;
+    }
+    historyNav = false;
     const keep = samePath ? current()?.name : undefined;
     batch(() => {
       setPath(e.path);
@@ -140,8 +150,9 @@ export function createPanel(id: PanelId) {
     });
   }
 
-  async function open(target: string, focus?: string) {
+  async function open(target: string, focus?: string, fromHistory = false) {
     const token = ++generation;
+    historyNav = fromHistory;
     pendingFocus = focus ?? null;
     setLoading(true);
     try {
@@ -174,6 +185,20 @@ export function createPanel(id: PanelId) {
       return {};
     }
     return { file: e };
+  }
+
+  function goBack() {
+    const prev = back.pop();
+    if (prev === undefined) return;
+    forward.push(path());
+    void open(prev, undefined, true);
+  }
+
+  function goForward() {
+    const next = forward.pop();
+    if (next === undefined) return;
+    back.push(path());
+    void open(next, undefined, true);
   }
 
   function goParent() {
@@ -244,6 +269,8 @@ export function createPanel(id: PanelId) {
     open,
     enter,
     goParent,
+    goBack,
+    goForward,
     move,
     toggleSelect,
     selectAll,
