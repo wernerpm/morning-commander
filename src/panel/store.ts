@@ -4,7 +4,7 @@
 import { batch, createMemo, createSignal } from "solid-js";
 import { backend, joinPath } from "../ipc";
 import { isNavigable, type Entry, type PanelEvent, type PanelId } from "../ipc/types";
-import { comparator, insertionIndex, type SortSpec } from "./sort";
+import { comparator, insertionIndex, sortEntries, type SortSpec } from "./sort";
 
 export const PARENT: Entry = {
   name: "..",
@@ -79,7 +79,7 @@ export function createPanel(id: PanelId) {
 
   function resort(keepName?: string) {
     const name = keepName ?? current()?.name;
-    const list = [...all().values()].filter(visible).sort(comparator(sort()));
+    const list = sortEntries([...all().values()].filter(visible), sort());
     batch(() => {
       setSorted(list);
       focusName(name);
@@ -152,13 +152,22 @@ export function createPanel(id: PanelId) {
 
   async function open(target: string, focus?: string, fromHistory = false) {
     const token = ++generation;
+    const t0 = performance.now();
     historyNav = fromHistory;
     pendingFocus = focus ?? null;
     setLoading(true);
     try {
       await backend.panelOpen(id, target, (ev) => {
         if (token !== generation) return;
-        if (ev.type === "snapshot") applySnapshot(ev);
+        if (ev.type === "snapshot") {
+          const t1 = performance.now();
+          applySnapshot(ev);
+          if (import.meta.env.DEV) {
+            // Dev-only timing, read by scripts/drive.mjs perf checks.
+            const w = window as unknown as { __mcTiming?: object[] };
+            (w.__mcTiming ??= []).push({ path: ev.path, n: ev.entries.length, ipc: Math.round(t1 - t0), apply: Math.round(performance.now() - t1) });
+          }
+        }
         else if (ev.type === "patch") applyPatch(ev);
         else {
           setLoading(false);

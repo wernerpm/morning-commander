@@ -37,3 +37,34 @@ describe("sort", () => {
     expect(extOf("Makefile")).toBe("");
   });
 });
+
+describe("sortKey", () => {
+  it("orders numbers naturally and ignores case and accents", async () => {
+    const { sortKey } = await import("./sort");
+    const names = ["file10", "File2", "file1", "éclair", "Eclair2", "e", "file02b", "file2a"];
+    const sorted = [...names].sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0));
+    expect(sorted).toEqual(["e", "éclair", "Eclair2", "file1", "File2", "file2a", "file02b", "file10"]);
+  });
+});
+
+describe("sortEntries", () => {
+  it("matches the comparator for every sort spec", async () => {
+    const { sortEntries } = await import("./sort");
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+    const pieces = ["a", "B", "é", "10", "2", ".", "txt", "Z", "x1", "007"];
+    const list: Entry[] = Array.from({ length: 500 }, (_, i) => ({
+      name: Array.from({ length: 1 + Math.floor(rnd() * 4) }, () => pieces[Math.floor(rnd() * pieces.length)]).join("") + i,
+      kind: rnd() < 0.2 ? "dir" : "file",
+      targetIsDir: false,
+      size: Math.floor(rnd() * 5),
+      mtime: Math.floor(rnd() * 5),
+      hidden: false,
+    }));
+    for (const key of ["name", "ext", "size", "mtime"] as const)
+      for (const desc of [false, true]) {
+        const spec = { key, desc };
+        expect(sortEntries(list, spec).map((e) => e.name)).toEqual([...list].sort(comparator(spec)).map((e) => e.name));
+      }
+  });
+});
