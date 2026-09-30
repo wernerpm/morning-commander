@@ -2365,6 +2365,7 @@ name = "morning-commander"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "libc",
  "log",
  "notify",
  "notify-debouncer-full",
