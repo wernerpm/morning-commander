@@ -25,7 +25,9 @@ Start with:
 | Frontend only in a browser (mock backend) | `pnpm dev` → http://localhost:1420 |
 | Screenshot of frontend (mock) | `node scripts/screenshot.mjs out.png type:rea Enter` (needs `pnpm dev`) |
 
-Run the relevant checks before every commit. On Linux (e.g. Claude Cloud) everything except `pnpm tauri dev` and the macOS-only watcher/trash integration tests works; Playwright WebKit and the mock backend are the main way to verify UI changes there.
+Run the relevant checks before every commit.
+
+**On Linux (e.g. Claude Cloud)** — not yet verified, expected to work: the frontend checks (`pnpm typecheck`, `pnpm test`, `pnpm test:e2e`; Playwright may need `pnpm exec playwright install --with-deps webkit`) run anywhere and are the main way to verify UI changes. The Rust crate gates macOS code with `cfg(target_os = "macos")`, but compiling Tauri needs system packages: `sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev build-essential pkg-config`. Watcher tests use inotify there instead of FSEvents, so treat macOS CI (GitHub Actions) as the authority for backend behaviour. The real app and `scripts/drive.mjs` need macOS.
 
 ## Layout
 
