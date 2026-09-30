@@ -34,6 +34,7 @@ log = "0.4.34"
 env_logger = "0.11.11"
 tauri-plugin-webdriver = { version = "0.2.3", optional = true }
 libc = "0.2.189"
+sha2 = "0.10"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

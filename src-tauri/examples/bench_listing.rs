@@ -45,7 +45,8 @@ fn main() {
 
     let (fast, entries) = timed(|| read_listing(dir).unwrap(), runs);
     println!("read_listing runs: {fast:?}");
-    let portable = (!fast_only).then(|| median(&timed(|| read_listing_portable(dir).unwrap(), runs).0));
+    let portable =
+        (!fast_only).then(|| median(&timed(|| read_listing_portable(dir).unwrap(), runs).0));
     let t = Instant::now();
     let json = serde_json::to_string(&entries).unwrap();
     println!(
