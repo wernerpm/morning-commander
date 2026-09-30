@@ -12,13 +12,22 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Morning Commander",
         "width": 1200,
         "height": 800
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost; frame-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost; frame-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost ws://localhost:1420 ws://localhost:1421",
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$HOME/**", "/Volumes/**", "/tmp/**", "/private/**"],
+          "requireLiteralLeadingDot": false
+        }
+      }
     }
   },
   "bundle": {
