@@ -2,11 +2,12 @@ import { batch, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import Dialog, { type DialogSpec } from "./app/Dialog";
 import OpProgress, { type OpState } from "./app/OpProgress";
 import { backend } from "./ipc";
-import type { Entry, OpKind, PanelId } from "./ipc/types";
+import { isNavigable, type Entry, type OpKind, type PanelId } from "./ipc/types";
 import { COMMANDS, commandFor, jumpChar, type CommandId } from "./keys/keymap";
 import { emptyJump, jumpActive, jumpBackspace, jumpKey, JUMP_TIMEOUT_MS, type JumpState } from "./panel/jump";
 import Panel from "./panel/Panel";
-import { createPanel, type Panel as PanelModel } from "./panel/store";
+import { basename, createPanel, type Panel as PanelModel } from "./panel/store";
+import Viewer from "./viewer/Viewer";
 import type { SortKey } from "./panel/sort";
 import "./app/app.css";
 
@@ -30,6 +31,7 @@ export default function App() {
   const [op, setOp] = createSignal<OpState | null>(null);
   const [message, setMessage] = createSignal<{ text: string; error: boolean } | null>(null);
   const [help, setHelp] = createSignal(false);
+  const [viewer, setViewer] = createSignal<{ panel: PanelId; files: string[]; index: number } | null>(null);
 
   const cur = () => panels[active()];
   const other = () => panels[active() === 0 ? 1 : 0];
@@ -54,9 +56,18 @@ export default function App() {
 
   // --- file actions -------------------------------------------------------
 
-  function openFile(p: PanelModel, _e: Entry) {
-    // The in-app viewer is mounted here once src/viewer lands; until then hand off.
-    void openDefault(p);
+  /** Open the viewer on `e`; ←/→ in the viewer walk the other files of this panel. */
+  function openFile(p: PanelModel, e: Entry) {
+    const files = p.entries().filter((x) => !isNavigable(x));
+    const index = Math.max(0, files.findIndex((x) => x.name === e.name));
+    clearJump();
+    setViewer({ panel: p.id, files: files.map((x) => p.fullPath(x.name)), index });
+  }
+
+  function closeViewer(lastPath: string) {
+    const v = viewer();
+    setViewer(null);
+    if (v) panels[v.panel].focusName(basename(lastPath));
   }
 
   async function openDefault(p: PanelModel) {
@@ -252,7 +263,7 @@ export default function App() {
   }
 
   function onKeyDown(ev: KeyboardEvent) {
-    if (dialog() || renaming()) return; // they own the keyboard
+    if (viewer() || dialog() || renaming()) return; // they own the keyboard
     if (help()) {
       if (ev.key === "Escape" || ev.key === "F1") {
         ev.preventDefault();
@@ -346,6 +357,9 @@ export default function App() {
         </For>
       </nav>
       <Show when={op()}>{(o) => <OpProgress op={o()} onCancel={() => void backend.cancelOp(o().id)} />}</Show>
+      <Show when={viewer()}>
+        {(v) => <Viewer files={v().files} index={v().index} onClose={closeViewer} />}
+      </Show>
       <Show when={dialog()}>{(d) => <Dialog spec={d()} onClose={() => setDialog(null)} />}</Show>
       <Show when={help()}>
         <div class="modal-backdrop" onMouseDown={() => setHelp(false)}>
