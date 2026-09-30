@@ -1,9 +1,13 @@
 pub mod cache;
 pub mod commands;
+pub mod fsutil;
 pub mod hub;
 pub mod listing;
 pub mod model;
+pub mod netvol;
 pub mod ops;
+pub mod persist;
+pub mod prefs;
 pub mod text;
 pub mod volume;
 pub mod watcher;
