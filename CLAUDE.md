@@ -7,6 +7,7 @@ Start with:
 - `docs/implementation-plan/step-*.md`: detailed specs per step (goals, files, invariants, acceptance criteria).
 - `docs/ipc.md`: the Rust ↔ webview contract. `src-tauri/src/model.rs`, `src/ipc/types.ts` and `docs/ipc.md` must change together.
 - `docs/testing.md`: how to test at each layer, including driving the real app.
+- `docs/release.md`: building, versioning, signing/notarisation and publishing.
 
 ## Commands
 
@@ -19,6 +20,7 @@ Start with:
 | Rust tests | `cd src-tauri && cargo test` |
 | Rust lint | `cd src-tauri && cargo clippy --all-targets -- -D warnings` |
 | Run the app | `pnpm tauri dev` |
+| Build `.app` + `.dmg` | `pnpm tauri build` (see `docs/release.md`) |
 | Run the app, drivable via WebDriver | `pnpm tauri dev --features webdriver`, then `node scripts/drive.mjs ...` |
 | Frontend only in a browser (mock backend) | `pnpm dev` → http://localhost:1420 |
 | Screenshot of frontend (mock) | `node scripts/screenshot.mjs out.png type:rea Enter` (needs `pnpm dev`) |

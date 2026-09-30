@@ -18,7 +18,7 @@ Two side-by-side panels showing directory listings, MC-style: dense monospace ro
 - **Late events**: every `open()` bumps a generation token; events from older subscriptions are dropped. Patches whose `path` differs from the current path are ignored.
 - **Persistence**: path, sort and hidden-toggle per panel in `localStorage` (`mc.panel.<id>`).
 - **Rendering**: `src/panel/Panel.tsx` — hand-rolled virtual list, fixed `ROW_HEIGHT = 22`, 8 rows overscan, rows absolutely positioned with `translateY`. `<For>` is keyed by `Entry` object identity, so scrolling reuses DOM nodes. The cursor row is kept in view by an effect.
-- **Sort**: `src/panel/sort.ts` — directories (incl. symlinks to dirs) first; `Intl.Collator(numeric, sensitivity: base)` for names so `report 2` < `Report 10` and case/accents are ignored. Size/ext sorting applies to files only; dirs stay by name.
+- **Sort**: `src/panel/sort.ts` — directories (incl. symlinks to dirs) first; names compared by cached natural-sort keys (`sortKey`: accents stripped, lowercased, digit runs length-prefixed) so `report 2` < `Report 10`. Whole listings use `sortEntries` (decorate-sort-undecorate); `comparator` is only for binary-inserting patches — a unit test keeps both in agreement. `Intl.Collator` was 10× slower at 100k entries. Size/ext sorting applies to files only; dirs stay by name.
 - **Formatting**: `src/panel/format.ts` — MC-like size column (`<DIR>`, `UP--DIR`, `12.3K`), ls-style dates.
 
 ## Files
@@ -41,7 +41,7 @@ src/app/app.css        theme variables (dark default, light via prefers-color-sc
 - [x] `/Users/demo/Many` (2000 files) renders < 100 DOM rows; End jumps to the last file
 - [x] Going up puts the cursor on the directory you came from
 - [x] External create/delete appear in both panels showing that directory, cursor stays on its file
-- [ ] 100k-entry directory stays smooth in the real app (measure once the backend lands)
+- [x] 100k-entry directory in the real app: ~0.3 s cold, ~0.14 s cached; End/Home instant (see `window.__mcTiming`, docs/testing.md)
 
 ## Follow-ups
 

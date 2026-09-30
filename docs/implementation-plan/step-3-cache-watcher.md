@@ -1,6 +1,6 @@
 # Step 3 — Listing cache, FSEvents watcher and panel subscriptions
 
-> Status: DONE (backend). Frontend patch application is part of the panel store.
+> Status: DONE. Frontend patch application is in `src/panel/store.ts`; create/delete/rename from Terminal verified in the real app (< 0.5 s).
 
 ## Goals
 

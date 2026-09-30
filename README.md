@@ -40,6 +40,8 @@ pnpm tauri build
 # → src-tauri/target/release/bundle/dmg/Morning Commander_0.1.0_aarch64.dmg
 ```
 
+See [`docs/release.md`](docs/release.md) for installing, universal builds, signing/notarisation and publishing a GitHub Release.
+
 The app is ad-hoc signed. macOS asks for access the first time you open Desktop, Documents, Downloads or removable volumes; to browse everything (e.g. `~/Library`), grant Full Disk Access in System Settings → Privacy & Security.
 
 ### Tests

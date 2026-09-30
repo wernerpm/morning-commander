@@ -1,6 +1,6 @@
 # Step 5 — Viewer mode
 
-> Status: IN PROGRESS. The component is built and checked in WebKit against the mock backend. Still to do: mount it from `App.tsx`, enable the asset protocol in `tauri.conf.json`, and test with real media in the Tauri app.
+> Status: DONE (v1). Mounted from `App.tsx` (Enter/F3 on a file), asset protocol enabled in `tauri.conf.json`, verified in the real app with a JPEG, a generated PDF and an H.264 MP4 (2026-09-30). Known gap: PDF iframe focus trap (see Known limitations).
 
 ## Goals
 
@@ -108,13 +108,13 @@ When Playwright tests land in the repo (`tests/e2e/`), port this scenario as `vi
 
 ## Acceptance criteria (in the Tauri app)
 
-- [ ] `Enter` on a JPEG/PNG/HEIC shows it fitted; `+`/`-`/`0` zoom and fit
-- [ ] `Enter` on a PDF shows WebKit's PDF view; `Esc` closes without clicking first
-- [ ] `Enter` on an MP4 (H.264) plays with sound; `Space` pauses; seeking with the scrubber works on a >1 GB file (range requests)
+- [x] `Enter` on a JPEG shows it fitted (verified); [ ] PNG/HEIC and `+`/`-`/`0` zoom not yet checked in the real app
+- [x] `Enter` on a PDF shows WebKit's PDF view; `Esc` closes without clicking first (clicking *into* the PDF still traps focus)
+- [x] `Enter` on an MP4 (H.264) autoplays (readyState 4 via asset protocol); [ ] sound, `Space` pause and seeking a >1 GB file not yet checked
 - [ ] `Enter` on an MKV shows the fallback card; `Enter`/`⌘O` opens it in the default app
 - [ ] `Enter` on a 50 MB log shows the first 5 MB with a truncation banner without freezing the UI
-- [ ] `←`/`→` walk through the panel's files; closing puts the panel cursor on the last file shown
-- [ ] No key pressed in the viewer moves the panel cursor or triggers type-to-jump
+- [x] `←`/`→` walk through the panel's files; closing puts the panel cursor on the last file shown
+- [x] No key pressed in the viewer moves the panel cursor or triggers type-to-jump (e2e `panel keys don't fire while the viewer is open`)
 
 ## Follow-ups
 

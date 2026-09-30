@@ -78,4 +78,4 @@ Where the time goes: instrumenting the bulk path showed ~95% of it inside the `g
 
 - Non-UTF-8 names are displayed lossily and can't be round-tripped for rename/trash. If this matters, add an opaque `rawName` (base64 bytes) to `Entry` and accept it in commands.
 - Two-stage snapshot for huge directories: send the first bulk buffer's entries immediately and the rest as a patch (the protocol already supports `snapshot` then `patch`).
-- The JS side (sorting 100k names with `Intl.Collator` ≈ 215 ms in WKWebView) is now the larger cost; precomputed sort keys would help (frontend).
+- The JS side was then the larger cost (`Intl.Collator` ≈ 215–850 ms); since fixed with precomputed sort keys (~70 ms) — see step 2.

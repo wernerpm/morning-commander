@@ -1,6 +1,6 @@
 # Step 6 — Rename in place
 
-> Status: DONE (frontend); backend `rename` command in Step 1/7 backend work
+> Status: DONE (frontend + backend `rename` in `src-tauri/src/ops.rs`), verified in the real app
 
 ## Goals
 
@@ -25,7 +25,7 @@
 - [x] Stem preselected, typing replaces it and keeps the extension
 - [x] Enter commits, cursor stays on renamed file
 - [x] Esc cancels without side effects
-- [ ] Renaming onto an existing name shows an error and keeps the old name (verify in the real app)
+- [x] Renaming onto an existing name shows an error and keeps the old name (verified in the real app)
 
 ## Follow-ups
 

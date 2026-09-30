@@ -1,0 +1,94 @@
+# Building and publishing
+
+## Build
+
+Prerequisites: macOS 13+, Xcode Command Line Tools, Rust (stable), Node 22+ and pnpm (`packageManager` in `package.json` pins the version; `corepack enable` or `npm i -g pnpm`).
+
+```bash
+pnpm install
+pnpm tauri build
+```
+
+Output:
+
+| File | What |
+|---|---|
+| `src-tauri/target/release/bundle/macos/Morning Commander.app` | The app (≈ 6 MB) |
+| `src-tauri/target/release/bundle/dmg/Morning Commander_<version>_aarch64.dmg` | Drag-to-Applications disk image |
+
+The build is **Apple Silicon only** (the host architecture). For an Intel or universal build you need rustup (Homebrew's Rust can't add targets):
+
+```bash
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
+pnpm tauri build --target universal-apple-darwin
+```
+
+Before building a release, run the checks: `pnpm typecheck && pnpm test && pnpm test:e2e && (cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test)`.
+
+Never build releases with `--features webdriver` (it's also compiled out of release builds by `cfg(debug_assertions)`, but don't rely on that alone).
+
+### Version
+
+Bump the version in **both** `package.json` and `src-tauri/tauri.conf.json` (and `src-tauri/Cargo.toml` to keep them aligned), commit, then tag: `git tag v0.2.0 && git push --tags`.
+
+## Install locally
+
+```bash
+cp -R "src-tauri/target/release/bundle/macos/Morning Commander.app" /Applications/
+```
+
+Local builds are **ad-hoc signed**. That's fine on the machine that built them. macOS privacy prompts (Desktop, Documents, Downloads, removable volumes) may reappear after each rebuild because the signature changes.
+
+## Publish
+
+Three levels, from least to most effort.
+
+### 1. GitHub Release with an unsigned (ad-hoc) DMG — works today
+
+```bash
+gh release create v0.1.0 \
+  "src-tauri/target/release/bundle/dmg/Morning Commander_0.1.0_aarch64.dmg" \
+  --title "Morning Commander 0.1.0" --notes "First release"
+```
+
+Anyone downloading it gets Gatekeeper's "can't be opened because Apple cannot check it for malicious software". They have to right-click → Open (macOS 14) or allow it in System Settings → Privacy & Security → "Open Anyway" (macOS 15+), or run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Morning Commander.app"
+```
+
+Acceptable for yourself and friends; not for a wider audience.
+
+### 2. Signed and notarised — needed for a normal download experience
+
+Requires an Apple Developer Program membership (USD 99/year).
+
+1. In Xcode or developer.apple.com, create a **Developer ID Application** certificate and install it in your login keychain. Find its name with `security find-identity -v -p codesigning`.
+2. Create an app-specific password at appleid.apple.com (or an App Store Connect API key).
+3. Build with these environment variables; Tauri signs, notarises and staples automatically:
+
+```bash
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export APPLE_ID="you@example.com"
+export APPLE_PASSWORD="app-specific-password"
+export APPLE_TEAM_ID="TEAMID"
+pnpm tauri build
+```
+
+(API-key alternative: `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_PATH` instead of `APPLE_ID`/`APPLE_PASSWORD`.)
+
+4. Verify: `spctl -a -vv "src-tauri/target/release/bundle/macos/Morning Commander.app"` should say `source=Notarized Developer ID`.
+5. Upload the DMG with `gh release create` as above.
+
+### 3. Automated releases from CI (not set up yet)
+
+Add `.github/workflows/release.yml` triggered on `v*` tags, using [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action) on `macos-latest`. It builds, signs, notarises and creates a draft GitHub Release. Store in repository secrets:
+
+| Secret | Contents |
+|---|---|
+| `APPLE_CERTIFICATE` | base64 of the exported `.p12` (`base64 -i cert.p12`) |
+| `APPLE_CERTIFICATE_PASSWORD` | password of the `.p12` |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: …` |
+| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | notarisation credentials |
+
+Later options: Tauri's updater plugin (signed update manifests on GitHub Releases) and a Homebrew cask (`brew install --cask morning-commander`) pointing at the release DMG.

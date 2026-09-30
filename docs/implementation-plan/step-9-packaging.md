@@ -6,6 +6,8 @@
 
 A `.app` you can drag into `/Applications` and use daily.
 
+How-to for building and publishing lives in [`../release.md`](../release.md); this doc tracks what's done.
+
 ## Tasks
 
 1. **Icon** — DONE: source is `assets/icon.svg` (sunrise behind two panels). Regenerate with `node scripts/render-icon.mjs /tmp/icon.png && pnpm tauri icon /tmp/icon.png`, then delete `src-tauri/icons/android` and `ios`.

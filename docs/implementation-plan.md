@@ -15,9 +15,9 @@
 | 6 | Rename in place | DONE (verified in real app) | [step-6](implementation-plan/step-6-rename.md) |
 | 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
-| 9 | Packaging: app bundle, icon, signing, CI | NOT STARTED | [step-9](implementation-plan/step-9-packaging.md) |
+| 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
 
-Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
+Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`release.md`](release.md) (build and publish), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
 
 ### Next up (good tasks for an agent)
 
@@ -80,7 +80,7 @@ A dual-pane file manager for macOS in the spirit of Midnight Commander (MC), bui
 |---|---|---|
 | Shell | **Tauri 2** | Native WKWebView on macOS, small bundle, Rust backend. Required by the brief |
 | Frontend | **SolidJS + TypeScript + Vite** | Fine-grained signals update only the rows that changed, which suits a list that is patched by watcher events. Solid and Svelte 5 both benchmark within ~5% of vanilla JS; Solid avoids React's re-render and memoisation overhead on large tables |
-| Virtual list | `@tanstack/solid-virtual` | Fixed row height makes virtualisation trivial; only ~50 DOM rows exist at any time |
+| Virtual list | Hand-rolled (planned: `@tanstack/solid-virtual`) | Fixed row height makes virtualisation trivial; only ~50 DOM rows exist at any time |
 | FS watching | `notify` + `notify-debouncer-full` | FSEvents backend on macOS. The full debouncer stitches FSEvents' two-part renames into one rename event using file IDs |
 | Directory read | `std::fs::read_dir` + `symlink_metadata`, parallel stat with `rayon` for big dirs | Simple; stat is the cost, not readdir |
 | Trash | `trash` crate, `DeleteMethod::NsFileManager` | Same API as Finder's "Move to Trash", no Automation permission prompt |
@@ -354,7 +354,7 @@ Each step ends with something runnable.
 
 - `pnpm create tauri-app` (Solid + TS), app id `com.wernerpm.morningcommander` (confirm), default window 1200×800.
 - Add crates: `notify`, `notify-debouncer-full`, `trash`, `parking_lot`, `rayon`, `serde`, `thiserror`, `tauri-plugin-opener`.
-- Add `@tanstack/solid-virtual`.
+- (Planned `@tanstack/solid-virtual`; ended up hand-rolling the virtual list.)
 - `cargo clippy`, `cargo test`, `pnpm tsc --noEmit` all pass.
 
 ### Step 1 — Rust core listing
