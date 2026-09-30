@@ -13,6 +13,7 @@ use crate::hub::{Hub, PanelSink};
 use crate::listing::{expand_tilde, home_dir as home};
 use crate::model::{ConflictChoice, OpEvent, OpKind, PanelEvent, TextPreview, VolumeInfo};
 use crate::ops::{self, OpSink, Ops};
+use crate::prefs::Settings;
 use crate::text;
 use crate::volume;
 
@@ -39,6 +40,7 @@ pub async fn panel_open(
     hub: State<'_, Arc<Hub>>,
     panel: u8,
     path: String,
+    refresh: bool,
     on_event: Channel<PanelEvent>,
 ) -> Result<(), String> {
     if panel > 1 {
@@ -47,7 +49,7 @@ pub async fn panel_open(
     let hub = hub.inner().clone();
     let sink: PanelSink = Arc::new(move |e| on_event.send(e).is_ok());
     blocking(move || {
-        hub.open(panel, &path, sink);
+        hub.open(panel, &path, refresh, sink);
         Ok(())
     })
     .await
@@ -130,4 +132,38 @@ pub async fn read_text(path: String, max_bytes: u64) -> Result<TextPreview, Stri
 pub async fn volume_info(path: String) -> Result<VolumeInfo, String> {
     let path = abs(&path)?;
     blocking(move || volume::volume_info(&path)).await
+}
+
+#[tauri::command]
+pub fn prefs_get(settings: State<'_, Arc<Settings>>) -> serde_json::Value {
+    settings.prefs_get()
+}
+
+#[tauri::command]
+pub async fn prefs_set(
+    settings: State<'_, Arc<Settings>>,
+    hub: State<'_, Arc<Hub>>,
+    patch: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let settings = settings.inner().clone();
+    let hub = hub.inner().clone();
+    blocking(move || {
+        let prefs = settings.prefs_set(&patch)?;
+        hub.set_cache_limits(settings.cache_max_bytes(), settings.cache_max_age_days());
+        Ok(prefs)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn state_get(settings: State<'_, Arc<Settings>>) -> serde_json::Value {
+    settings.state_get()
+}
+
+#[tauri::command]
+pub fn state_set(
+    settings: State<'_, Arc<Settings>>,
+    patch: serde_json::Value,
+) -> Result<(), String> {
+    settings.state_set(&patch)
 }
