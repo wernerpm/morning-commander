@@ -4,18 +4,37 @@
 
 ## Implementation Status
 
-| Step | Component | Status |
-|------|-----------|--------|
-| 0 | Scaffold: Tauri 2 + SolidJS + Vite | NOT STARTED |
-| 1 | Rust core: directory listing, sort, entry model | NOT STARTED |
-| 2 | Dual-panel UI: virtualised lists, cursor, `Tab`, navigation | NOT STARTED |
-| 3 | Listing cache + FSEvents watcher + diff push | NOT STARTED |
-| 4 | Keyboard: type-to-jump, selection, keymap registry | NOT STARTED |
-| 5 | Viewer mode: images, PDFs, videos, text | NOT STARTED |
-| 6 | Rename in place | NOT STARTED |
-| 7 | File operations: copy, move, mkdir, trash, with progress | NOT STARTED |
-| 8 | Polish: persistence, hidden files, sort modes, status bar, theme | NOT STARTED |
-| 9 | Packaging: app bundle, icon, signing | NOT STARTED |
+| Step | Component | Status | Detail |
+|------|-----------|--------|--------|
+| 0 | Scaffold: Tauri 2 + SolidJS + Vite | DONE | — |
+| 1 | Rust core: directory listing, entry model | DONE (perf work in progress: `getattrlistbulk`) | [step-1](implementation-plan/step-1-rust-listing.md) |
+| 2 | Dual-panel UI: virtualised lists, cursor, `Tab`, navigation | DONE | [step-2](implementation-plan/step-2-dual-panel-ui.md) |
+| 3 | Listing cache + FSEvents watcher + diff push | DONE | [step-3](implementation-plan/step-3-cache-watcher.md) |
+| 4 | Keyboard: type-to-jump, selection, keymap registry | DONE | [step-4](implementation-plan/step-4-keyboard.md) |
+| 5 | Viewer mode: images, PDFs, videos, audio, text | DONE (verified in real app) | [step-5](implementation-plan/step-5-viewer.md) |
+| 6 | Rename in place | DONE (verified in real app) | [step-6](implementation-plan/step-6-rename.md) |
+| 7 | File operations: copy, move, mkdir, trash, with progress | DONE v1 (conflicts skip; no per-file prompt yet) | [step-7](implementation-plan/step-7-file-operations.md) |
+| 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
+| 9 | Packaging: app bundle, icon, signing, CI | NOT STARTED | [step-9](implementation-plan/step-9-packaging.md) |
+
+Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
+
+### Measured (dev build, M-series Mac)
+
+| Scenario | Result |
+|---|---|
+| 100k-file dir, Rust listing (release, cold) | ~320–400 ms before `getattrlistbulk` work |
+| 100k-file dir, cached: IPC / sort+render | ~50 ms / ~70 ms |
+| External create/delete/rename → UI | < 500 ms (FSEvents + 100 ms debounce) |
+
+### Decisions made during implementation
+
+- **Frontend owns sort, cursor, selection** (not Rust as first planned below): avoids a round trip per keypress; Rust stays stateless apart from cache + subscriptions. See `ipc.md`.
+- **Hand-rolled virtual list** instead of `@tanstack/solid-virtual`: fixed row height makes it ~40 lines.
+- **Sorting** uses precomputed natural-sort keys, not `Intl.Collator` (10× faster at 100k).
+- **Snapshot is sent in one piece** (JSON over a Tauri channel); the two-stage snapshot wasn't needed.
+- **Real-app testing** via `tauri-plugin-webdriver` behind the `webdriver` cargo feature.
+- Open questions below (rename key, jump semantics) were implemented as proposed: `⌘R`/`⇧F6`/`F2`, prefix type-ahead with same-letter cycling.
 
 ---
 
@@ -93,6 +112,8 @@ A dual-pane file manager for macOS in the spirit of Midnight Commander (MC), bui
 
 ### Rust is the source of truth
 
+> Superseded: the frontend owns sort, cursor and selection (see "Decisions made during implementation" above and `docs/ipc.md`). Kept for history.
+
 Following Newt, panel state (path, sort, selection, cursor) lives in Rust. The frontend renders what it is sent and sends intents back (`navigate`, `toggle_select`, `rename`). This keeps the cache, the watcher and the panels consistent, and makes the core testable without a webview.
 
 The one exception is the cursor: moving it happens on every keypress, so the frontend owns it and reports it to Rust only when it matters (on navigate, operations, and before a diff is applied so the cursor can be kept on the same file).
@@ -138,6 +159,8 @@ Sort defaults to MC order: `..` first, then directories, then files, each group 
 > Pitfall seen in the wild: `notify-debouncer-full`'s file-ID cache walks the whole watch root. With non-recursive watches per directory this is cheap, but never add a recursive watch on a large root.
 
 ### Frontend protocol
+
+> As built, the protocol is `PanelEvent` in `docs/ipc.md` (no generation numbers; paths identify events). Kept for history.
 
 Each panel gets one `Channel<PanelMsg>` on startup:
 
@@ -387,7 +410,8 @@ Each step ends with something runnable.
 | **Keyboard focus in viewer** | `<video>` and PDF iframes swallow keys. Need a capture-phase listener on the window for `Esc` and prev/next, and to test that iframes don't trap focus. |
 | **FSEvents on network volumes** | SMB/NFS mounts may not deliver events. Detect non-local volumes (`statfs`) and fall back to polling the visible directory every few seconds. |
 | **TCC prompts** | Reading Desktop/Documents/Downloads/removable volumes prompts once per app. Unsigned dev builds may re-prompt after each rebuild. |
-| **Huge directories** | 100k+ entries: two-stage snapshot, JSON size. Measure in Step 3 before optimising. |
+| **Huge directories** | Measured: fine when cached (~120 ms). Cold listing is the bottleneck → `getattrlistbulk`. |
+| **WebDriver key coverage** | tauri-plugin-webdriver 0.2 doesn't send End/Home/PageUp/PageDown; `drive.mjs press:` works around it. |
 | **App id / signing identity** | Needed for Step 9. |
 
 ---

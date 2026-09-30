@@ -28,9 +28,19 @@ node scripts/drive.mjs state              # both panels' path, cursor and status
 node scripts/drive.mjs type:doc key:Enter wait:200 state shot:/tmp/mc.png
 ```
 
-Steps: `key:<Chord>` (e.g. `key:Meta+r`, `key:F7`), `type:<text>`, `wait:<ms>`, `eval:<js returning JSON>`, `state`, `shot:<file.png>`.
+Steps: `press:<Key>` (synthetic keydown; needed for End/Home/PageUp/PageDown, which tauri-plugin-webdriver 0.2 doesn't map), `fill:<text>` (set the focused input's value — plugin typing appends instead of replacing a selection), `key:<Chord>` (e.g. `key:Meta+r`, `key:F7`), `type:<text>`, `wait:<ms>`, `eval:<js returning JSON>`, `state`, `shot:<file.png>`.
 
 The `webdriver` feature is off by default and must never be enabled in release builds: it lets any local process run JS in a window that can rename and trash files.
+
+Each `drive.mjs` call opens a new WebDriver session on the same page; app state carries over between calls.
+
+In dev builds the store records per-snapshot timings in `window.__mcTiming` (`ipc` = request → snapshot received, `apply` = sort + render), e.g.:
+
+```bash
+node scripts/drive.mjs key:Backspace wait:800 key:Enter wait:1500 "eval:return window.__mcTiming.slice(-1)"
+```
+
+Reference numbers (M-series Mac, dev build with opt-level 1): 100k files cached → ipc ≈ 50 ms, apply ≈ 70 ms.
 
 A good smoke test after backend changes:
 

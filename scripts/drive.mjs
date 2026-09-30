@@ -5,6 +5,8 @@
 // Steps:
 //   key:Enter  key:Meta+r  key:F7     press a key chord (W3C key actions)
 //   type:hello                        type text (note: appends; doesn't replace a selection)
+//   press:End                         dispatch a synthetic keydown on window (for keys the
+//                                     plugin can't send: End, Home, PageUp, PageDown)
 //   fill:/some/path                   set the focused input's value (use for dialogs)
 //   wait:500                          sleep milliseconds
 //   eval:<js>                         run JS in the page, print the JSON result
@@ -70,7 +72,11 @@ try {
     const arg = rest.join(":");
     if (cmd === "key") await chord(arg);
     else if (cmd === "type") for (const ch of arg) await keys([ch]);
-    else if (cmd === "fill")
+    else if (cmd === "press") {
+      const [key, ...mods] = arg.split("+").reverse();
+      const init = { key, code: key, bubbles: true, metaKey: mods.includes("Meta"), shiftKey: mods.includes("Shift"), altKey: mods.includes("Alt"), ctrlKey: mods.includes("Control") };
+      await evalJs(`window.dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify(init)})); return 1;`);
+    } else if (cmd === "fill")
       await evalJs(
         `const el = document.activeElement; el.value = ${JSON.stringify(arg)}; el.dispatchEvent(new Event("input", { bubbles: true })); return el.value;`,
       );
