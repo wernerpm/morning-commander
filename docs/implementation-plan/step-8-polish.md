@@ -1,6 +1,6 @@
 # Step 8 — Polish
 
-> Status: PARTIAL — sort modes, hidden toggle, swap, same-dir, go-to-path, help overlay, light/dark theme done; bookmarks, free-space, MC theme not started
+> Status: PARTIAL — sort modes, hidden toggle, swap, same-dir, go-to-path, help overlay, light/dark theme, bookmarks, history, free space done; mini-status, MC theme, volumes list not started
 
 ## Goals
 
@@ -23,13 +23,13 @@ The small things that make it a daily driver.
 
 ## To do (specs)
 
-### Bookmarks / hotlist — `⌘D`
+### Bookmarks / hotlist — `⌘D` — DONE (`src/app/Bookmarks.tsx`)
 - Dialog listing bookmarks (name → path), type-to-filter, Enter opens in the active panel.
 - `⌘⇧D` adds the current directory. Stored in `localStorage` (`mc.bookmarks`), later a JSON file in the app config dir.
 - Seed with Home, Desktop, Documents, Downloads, `/Volumes`.
 
-### Free space in the footer
-- Rust command `volume_info(path) -> { free, total, name }` via `statvfs`; call on navigate, show `123 GB free` in the panel footer.
+### Free space in the footer — DONE
+- `volume_info(path) -> { free, total }` via `statvfs` (`src-tauri/src/volume.rs`); refreshed on navigation, after copy/move and trash.
 
 ### Status line
 - Shows the cursor entry's full name, size in bytes, permissions and mtime (MC mini-status). Needs `mode` on `Entry` or a `stat(path)` command.
@@ -37,8 +37,8 @@ The small things that make it a daily driver.
 ### Classic MC theme
 - `data-theme="mc"` on `<html>` swapping the CSS variables to the blue/cyan palette; toggle in a settings dialog.
 
-### History
-- `⌘[` / `⌘]` back/forward per panel (store a stack in `store.ts`).
+### History — DONE
+- `⌘[` / `⌘]` back/forward per panel (stacks in `store.ts`).
 
 ### Volumes
 - `⌘⇧V` lists `/Volumes/*` to jump to; handle ejected volume (panel falls back — backend already sends a snapshot of the nearest ancestor).

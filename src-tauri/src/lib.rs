@@ -5,6 +5,7 @@ pub mod listing;
 pub mod model;
 pub mod ops;
 pub mod text;
+pub mod volume;
 pub mod watcher;
 
 use std::sync::Arc;
@@ -30,6 +31,7 @@ pub fn run() {
             commands::resolve_conflict,
             commands::open_default,
             commands::read_text,
+            commands::volume_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -47,3 +47,8 @@ export type PanelId = 0 | 1;
 export function isNavigable(e: Entry): boolean {
   return e.kind === "dir" || (e.kind === "symlink" && e.targetIsDir);
 }
+
+export interface VolumeInfo {
+  free: number;
+  total: number;
+}

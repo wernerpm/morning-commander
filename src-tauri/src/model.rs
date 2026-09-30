@@ -101,3 +101,10 @@ pub struct TextPreview {
     pub binary: bool,
     pub size: u64,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeInfo {
+    pub free: u64,
+    pub total: u64,
+}

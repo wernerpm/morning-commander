@@ -51,6 +51,7 @@ export function createPanel(id: PanelId) {
   const [selected, setSelected] = createSignal<Set<string>>(new Set());
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
+  const [freeSpace, setFreeSpace] = createSignal<number | null>(null);
 
   // Name to put the cursor on when the next snapshot arrives.
   let pendingFocus: string | null = null;
@@ -118,6 +119,16 @@ export function createPanel(id: PanelId) {
       pendingFocus = null;
     });
     persist();
+    if (!samePath) refreshFreeSpace();
+  }
+
+  /** Re-read free space for the current directory's volume (after navigation or file ops). */
+  function refreshFreeSpace() {
+    const p = path();
+    backend.volumeInfo(p).then(
+      (v) => p === path() && setFreeSpace(v.free),
+      () => setFreeSpace(null),
+    );
   }
 
   function applyPatch(e: Extract<PanelEvent, { type: "patch" }>) {
@@ -275,6 +286,8 @@ export function createPanel(id: PanelId) {
     showHidden,
     error,
     loading,
+    freeSpace,
+    refreshFreeSpace,
     open,
     enter,
     goParent,

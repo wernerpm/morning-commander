@@ -141,6 +141,7 @@ export default function App() {
         try {
           await backend.trash(targets.map((t) => p.fullPath(t.name)));
           p.selectAll(false);
+          p.refreshFreeSpace();
           flash(`Moved ${describe(targets)} to the Trash`);
         } catch (err) {
           flash(`Trash failed: ${err}`, true);
@@ -181,6 +182,7 @@ export default function App() {
           } else if (ev.type === "done") {
             setOp(null);
             setConflict(null);
+            panels.forEach((p) => p.refreshFreeSpace());
             src.selectAll(false);
             if (ev.errors.length) flash(`${title} finished with ${ev.errors.length} problem(s): ${ev.errors[0]}`, true);
             else flash(`${kind === "copy" ? "Copied" : "Moved"} ${describe(targets)}`);

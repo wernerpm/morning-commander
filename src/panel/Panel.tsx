@@ -181,6 +181,7 @@ export default function Panel(props: Props) {
           </span>
         </Show>
         <span class="sort-indicator">
+          <Show when={props.panel.freeSpace() !== null}>{formatBytesLong(props.panel.freeSpace()!)} free · </Show>
           {props.panel.sort().key}
           {props.panel.sort().desc ? "↓" : "↑"}
           {props.panel.showHidden() ? " ·hidden" : ""}

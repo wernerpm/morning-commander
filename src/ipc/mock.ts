@@ -256,6 +256,9 @@ export const mockBackend: Backend = {
     const binary = n.content === undefined;
     return { text: binary ? "" : text.slice(0, maxBytes), truncated: text.length > maxBytes, binary, size: n.size };
   },
+  async volumeInfo() {
+    return { free: 123 * 1024 ** 3, total: 494 * 1024 ** 3 };
+  },
   fileUrl(path) {
     return `mock://${path}`;
   },

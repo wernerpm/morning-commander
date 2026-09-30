@@ -11,9 +11,10 @@ use tauri::ipc::Channel;
 
 use crate::hub::{Hub, PanelSink};
 use crate::listing::{expand_tilde, home_dir as home};
-use crate::model::{ConflictChoice, OpEvent, OpKind, PanelEvent, TextPreview};
+use crate::model::{ConflictChoice, OpEvent, OpKind, PanelEvent, TextPreview, VolumeInfo};
 use crate::ops::{self, OpSink, Ops};
 use crate::text;
+use crate::volume;
 
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -123,4 +124,10 @@ pub async fn open_default(path: String) -> Result<(), String> {
 pub async fn read_text(path: String, max_bytes: u64) -> Result<TextPreview, String> {
     let path = abs(&path)?;
     blocking(move || text::read_text(&path, max_bytes)).await
+}
+
+#[tauri::command]
+pub async fn volume_info(path: String) -> Result<VolumeInfo, String> {
+    let path = abs(&path)?;
+    blocking(move || volume::volume_info(&path)).await
 }

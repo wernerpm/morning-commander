@@ -67,6 +67,7 @@ interface TextPreview { text: string; truncated: boolean; binary: boolean; size:
 | `resolve_conflict` | `id: number, choice: ConflictChoice, applyToAll: boolean` | `void` | `applyToAll` reuses the choice for the remaining conflicts of this op. |
 | `cancel_op` | `id: number` | `void` | |
 | `open_default` | `path: string` | `void` | macOS `open` |
+| `volume_info` | `path: string` | `{ free: number; total: number }` | `statvfs` of the volume containing `path` (bytes; `free` = available to the user) |
 | `read_text` | `path: string, maxBytes: number` | `TextPreview` | For the text viewer |
 
 Errors are returned as rejected promises with a human-readable string.
