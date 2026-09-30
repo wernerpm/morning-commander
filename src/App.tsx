@@ -1,5 +1,6 @@
-import { batch, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import Bookmarks, { loadBookmarks, saveBookmarks, type Bookmark } from "./app/Bookmarks";
+import { batch, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import Bookmarks, { defaultBookmarks, type Bookmark } from "./app/Bookmarks";
+import { prefs, updatePrefs } from "./app/settings";
 import ConflictDialog from "./app/ConflictDialog";
 import Dialog, { type DialogSpec } from "./app/Dialog";
 import OpProgress, { type OpState } from "./app/OpProgress";
@@ -34,7 +35,11 @@ export default function App() {
   const [conflict, setConflict] = createSignal<{ id: number; path: string } | null>(null);
   const [message, setMessage] = createSignal<{ text: string; error: boolean } | null>(null);
   const [help, setHelp] = createSignal(false);
-  const [bookmarks, setBookmarks] = createSignal<Bookmark[]>([]);
+  const [home, setHome] = createSignal<string | null>(null);
+  const bookmarks = createMemo<Bookmark[]>(() => {
+    const h = home();
+    return prefs().bookmarks ?? (h ? defaultBookmarks(h) : []);
+  });
   const [showBookmarks, setShowBookmarks] = createSignal(false);
   const [viewer, setViewer] = createSignal<{ panel: PanelId; files: string[]; index: number } | null>(null);
 
@@ -56,7 +61,7 @@ export default function App() {
 
   onMount(async () => {
     const home = await backend.homeDir();
-    setBookmarks(loadBookmarks(home));
+    setHome(home);
     await Promise.all(panels.map((p) => p.open(p.initialPath || home)));
   });
 
@@ -243,7 +248,7 @@ export default function App() {
     "panel.toggleHidden": () => cur().toggleHidden(),
     "panel.goto": goto,
     "panel.home": async () => void cur().open(await backend.homeDir()),
-    "panel.refresh": () => void cur().open(cur().path()),
+    "panel.refresh": () => void cur().reload(),
     "sort.name": () => setSort("name"),
     "sort.ext": () => setSort("ext"),
     "sort.size": () => setSort("size"),
@@ -280,8 +285,7 @@ export default function App() {
   };
 
   function updateBookmarks(list: Bookmark[]) {
-    setBookmarks(list);
-    saveBookmarks(list);
+    void updatePrefs({ bookmarks: list });
   }
 
   function pageSize(): number {
@@ -390,7 +394,7 @@ export default function App() {
         <Bookmarks
           bookmarks={bookmarks()}
           onOpen={(path) => void cur().open(path)}
-          onRemove={(b) => updateBookmarks(bookmarks().filter((x) => x !== b))}
+          onRemove={(b) => updateBookmarks(bookmarks().filter((x) => x.path !== b.path || x.name !== b.name))}
           onClose={() => setShowBookmarks(false)}
         />
       </Show>

@@ -226,6 +226,37 @@ body,
   overflow: hidden;
 }
 
+/* Stale listing being revalidated. Hidden for the first 150 ms so the usual
+   ~30 ms NAS revalidation doesn't flicker. */
+.stale-marker {
+  display: inline-block;
+  margin-right: 1ch;
+  color: var(--accent);
+  opacity: 0;
+  animation: stale-in 150ms ease-out 150ms forwards;
+}
+
+@keyframes stale-in {
+  to {
+    opacity: 1;
+  }
+}
+
+.nas-badge {
+  display: inline-block;
+  margin-right: 1ch;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 13px;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
 .jump {
   color: var(--fg);
 }
