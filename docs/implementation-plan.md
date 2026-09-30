@@ -7,13 +7,13 @@
 | Step | Component | Status | Detail |
 |------|-----------|--------|--------|
 | 0 | Scaffold: Tauri 2 + SolidJS + Vite | DONE | — |
-| 1 | Rust core: directory listing, entry model | DONE (perf work in progress: `getattrlistbulk`) | [step-1](implementation-plan/step-1-rust-listing.md) |
+| 1 | Rust core: directory listing (`getattrlistbulk` on macOS), entry model | DONE | [step-1](implementation-plan/step-1-rust-listing.md) |
 | 2 | Dual-panel UI: virtualised lists, cursor, `Tab`, navigation | DONE | [step-2](implementation-plan/step-2-dual-panel-ui.md) |
 | 3 | Listing cache + FSEvents watcher + diff push | DONE | [step-3](implementation-plan/step-3-cache-watcher.md) |
 | 4 | Keyboard: type-to-jump, selection, keymap registry | DONE | [step-4](implementation-plan/step-4-keyboard.md) |
 | 5 | Viewer mode: images, PDFs, videos, audio, text | DONE (verified in real app) | [step-5](implementation-plan/step-5-viewer.md) |
 | 6 | Rename in place | DONE (verified in real app) | [step-6](implementation-plan/step-6-rename.md) |
-| 7 | File operations: copy, move, mkdir, trash, with progress | DONE v1 (conflicts skip; no per-file prompt yet) | [step-7](implementation-plan/step-7-file-operations.md) |
+| 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | NOT STARTED | [step-9](implementation-plan/step-9-packaging.md) |
 
@@ -23,8 +23,9 @@ Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](tes
 
 | Scenario | Result |
 |---|---|
-| 100k-file dir, Rust listing (release, cold) | ~320–400 ms before `getattrlistbulk` work |
-| 100k-file dir, cached: IPC / sort+render | ~50 ms / ~70 ms |
+| 100k-file dir, Rust listing (release) | ~120–140 ms with `getattrlistbulk` (was ~180–400 ms) |
+| 100k-file dir in the app, cold: IPC / sort+render | ~180 ms / ~110 ms (was ~1.2 s total) |
+| 100k-file dir in the app, cached: IPC / sort+render | ~65 ms / ~70 ms |
 | External create/delete/rename → UI | < 500 ms (FSEvents + 100 ms debounce) |
 
 ### Decisions made during implementation
@@ -410,7 +411,7 @@ Each step ends with something runnable.
 | **Keyboard focus in viewer** | `<video>` and PDF iframes swallow keys. Need a capture-phase listener on the window for `Esc` and prev/next, and to test that iframes don't trap focus. |
 | **FSEvents on network volumes** | SMB/NFS mounts may not deliver events. Detect non-local volumes (`statfs`) and fall back to polling the visible directory every few seconds. |
 | **TCC prompts** | Reading Desktop/Documents/Downloads/removable volumes prompts once per app. Unsigned dev builds may re-prompt after each rebuild. |
-| **Huge directories** | Measured: fine when cached (~120 ms). Cold listing is the bottleneck → `getattrlistbulk`. |
+| **Huge directories** | Measured: 100k files ≈ 0.3 s cold, 0.14 s cached. Next lever would be a compact wire format (10 MB JSON today). |
 | **WebDriver key coverage** | tauri-plugin-webdriver 0.2 doesn't send End/Home/PageUp/PageDown; `drive.mjs press:` works around it. |
 | **App id / signing identity** | Needed for Step 9. |
 
