@@ -27,6 +27,11 @@ pub type PanelSink = Arc<dyn Fn(PanelEvent) -> bool + Send + Sync>;
 /// More changed names than this in one batch → re-read the whole directory instead.
 const FLOOD_THRESHOLD: usize = 200;
 
+/// How often panel directories are checked for existence. FSEvents doesn't reliably
+/// report the deletion of a non-recursively watched directory itself (nor volume
+/// unmounts), so this is the backstop that moves panels to the nearest ancestor.
+const LIVENESS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
 #[derive(Debug, Default, Clone)]
 struct Dirty {
     names: HashSet<OsString>,
@@ -74,6 +79,7 @@ pub struct Hub {
 impl Hub {
     pub fn new() -> Result<Arc<Self>, String> {
         let (tx, rx) = mpsc::channel::<WatchBatch>();
+        let liveness_tx = tx.clone();
         let watcher = FsWatcher::new(move |batch| {
             let _ = tx.send(batch);
         })?;
@@ -88,6 +94,34 @@ impl Hub {
                 for batch in rx {
                     let Some(hub) = weak.upgrade() else { break };
                     hub.handle_batch(batch);
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        let weak = Arc::downgrade(&hub);
+        thread::Builder::new()
+            .name("mc-liveness".into())
+            .spawn(move || {
+                loop {
+                    thread::sleep(LIVENESS_INTERVAL);
+                    let Some(hub) = weak.upgrade() else { break };
+                    let dirs: Vec<PathBuf> = {
+                        let s = hub.state.lock();
+                        s.panels.values().map(|p| p.dir.clone()).collect()
+                    };
+                    drop(hub);
+                    let missing: Vec<PathBuf> = dirs.into_iter().filter(|d| !d.is_dir()).collect();
+                    // Reported like a watcher event on the directory itself, so the
+                    // regular "gone" handling (serialised with real events) applies.
+                    if !missing.is_empty()
+                        && liveness_tx
+                            .send(WatchBatch {
+                                paths: missing,
+                                ..WatchBatch::default()
+                            })
+                            .is_err()
+                    {
+                        break;
+                    }
                 }
             })
             .map_err(|e| e.to_string())?;
