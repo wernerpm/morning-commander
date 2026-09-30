@@ -15,7 +15,26 @@
 - A listing is sent as one snapshot after the whole directory is read, so a slow remote directory shows nothing until it's done.
 - `getattrlistbulk` is used on macOS (smbfs supports it; falls back to readdir + lstat).
 
-First task of this step: **measure** with the real NAS: `cargo run --release --example bench_listing -- /Volumes/<share>/<big dir>` (cold and warm), and time Finder for comparison. Record the numbers here.
+### Environment and first measurements (2026-09-30)
+
+- NAS: consumer 2-bay NAS, **SMB** share mounted under `/Volumes/<share>`.
+- Biggest media directories: **5k–10k entries** each (no 100k-entry folders).
+
+Measured on one ~4.3k-entry directory of the share (release build, `bench_listing`, **warm** — the directory had just been listed, so the macOS SMB client's attribute cache was populated):
+
+| Path | Time |
+|---|---|
+| `read_listing` (`getattrlistbulk`) | ~10 ms |
+| portable (readdir + lstat per entry) | ~63 ms |
+| JSON encoding | < 1 ms (≈ 660 KB) |
+
+Takeaways:
+- Warm listings are already fast; the pain is **cold** listings (first visit after mount/launch, or after the SMB client cache expires) and whatever Finder does on top. Still to measure: a cold listing (e.g. right after remounting the share) and Finder's time for the same directory.
+- At 5–10k entries a directory is ≈ 0.4–0.8 MB of JSON today, ≈ 0.2–0.4 MB with the compact encoding below, so the 100 MB cache holds a few hundred large media directories — enough to keep the whole library's structure warm.
+- `getattrlistbulk` works on this SMB share (6× faster than per-entry stat); keep it as the primary path.
+- Streaming (phase 11a) matters less at this size than stale-while-revalidate (11b); consider doing 11b first.
+
+**Docs rule:** never commit real share names, mount paths, directory or file names from the NAS (or anyone's disk) — use placeholders like `/Volumes/<share>/<dir>`.
 
 ## Design
 
@@ -126,7 +145,7 @@ src/panel/store.ts           stale/fresh/append handling, footer indicators
 ## Acceptance criteria
 
 - [ ] Relaunching the app and opening a previously visited NAS directory shows its listing in < 100 ms, then refreshes
-- [ ] A NAS directory with 10k+ entries shows the first entries within ~200 ms of `Enter` and stays navigable while loading
+- [ ] A NAS directory with 5k–10k entries shows the first entries within ~200 ms of `Enter` (cold) and stays navigable while loading
 - [ ] Files added on the NAS from another machine appear in a shown panel within ~5 s
 - [ ] `~/.morning-commander/cache` never exceeds the configured limit; oldest visited directories go first
 - [ ] Unplugging the network shows the cached listing marked offline, no spinner lock-up, no crash
@@ -134,6 +153,6 @@ src/panel/store.ts           stale/fresh/append handling, footer indicators
 
 ## Open questions
 
-- Which protocol does the NAS use (SMB 3 is typical)? Mount path (`/Volumes/...`)? Typical directory sizes (hundreds vs tens of thousands of entries)?
+- ~~Protocol, mount location, directory sizes~~ — answered: SMB, `/Volumes/<share>`, 5k–10k entries.
 - Is the dir-mtime shortcut safe on this NAS? (SMB servers normally update a directory's mtime on create/delete/rename of children; verify with the real share.)
 - Should the cache also remember per-directory cursor position and sort?

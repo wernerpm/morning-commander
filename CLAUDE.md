@@ -52,4 +52,5 @@ scripts/                  screenshot.mjs, drive.mjs
 - Deletions always go to the Trash. Nothing in the app permanently deletes user files.
 - Changes to the filesystem are never patched into the UI by the code that made them (except the optimistic rename); the watcher reports them.
 - Keep the mock backend (`src/ipc/mock.ts`) in sync with new commands so e2e tests can cover them.
+- **Privacy:** never commit real paths, share names or file names from the owner's disks or NAS (docs, tests, fixtures, commit messages). Use placeholders (`/Volumes/<share>/<dir>`) or the mock tree (`/Users/demo`).
 - Commit messages: imperative subject, short body; end with the `Co-Authored-By` line the harness gives you.
