@@ -1,6 +1,6 @@
 # Step 5 — Viewer mode
 
-> Status: DONE (v1). Mounted from `App.tsx` (Enter/F3 on a file), asset protocol enabled in `tauri.conf.json`, verified in the real app with a JPEG, a generated PDF and an H.264 MP4 (2026-09-30). Known gap: PDF iframe focus trap (see Known limitations).
+> Status: DONE (v1); superseded by per-type viewers in [step 10](step-10-media-viewers.md). Mounted from `App.tsx` (Enter/F3 on a file), asset protocol enabled in `tauri.conf.json`, verified in the real app with a JPEG, a generated PDF and an H.264 MP4 (2026-09-30). Known gap: PDF iframe focus trap (see Known limitations).
 
 ## Goals
 

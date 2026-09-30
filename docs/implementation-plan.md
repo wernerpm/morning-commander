@@ -16,6 +16,8 @@
 | 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
+| 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | NOT STARTED (planned) | [step-10](implementation-plan/step-10-media-viewers.md) |
+| 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | NOT STARTED (planned, **top priority**) | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
 
 Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`release.md`](release.md) (build and publish), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
 
@@ -23,13 +25,16 @@ Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](tes
 
 Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, the mock backend and the tests in sync.
 
-1. **PDF focus trap** — clicking into a PDF iframe steals keys (Esc stops working). Bundle PDF.js or re-focus the document on iframe focus ([step-5](implementation-plan/step-5-viewer.md)).
-2. **Network volumes** — detect non-local filesystems (`statfs` `f_fstypename`) and poll the visible directory every ~3 s instead of relying on FSEvents ([step-3](implementation-plan/step-3-cache-watcher.md)).
-3. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
-4. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
-5. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
-6. **Compact wire format** for huge listings (10 MB JSON for 100k entries) — only if profiling says so.
-7. **Release workflow** — Developer ID signing + notarisation on tag ([step-9](implementation-plan/step-9-packaging.md)).
+**Context:** the owner's media library lives on a NAS, and slow remote listings (Finder is very slow there) are the main pain point. Prioritise accordingly.
+
+1. **Step 11a/b — NAS: non-blocking streaming listings, then persistent JSON cache with stale-while-revalidate** ([step-11](implementation-plan/step-11-persistent-cache-nas.md)). Start by measuring the real NAS.
+2. **Step 11c — NAS freshness**: poll shown network directories (FSEvents doesn't work there).
+3. **Step 10 — Media viewers**: video player keys (seek ±5 s/±1 min, volume `=`/`-`, `F` fullscreen, volume persisted in `~/.morning-commander/preferences.json`), PDF.js viewer focused on open (also fixes the PDF focus trap), photo navigation ([step-10](implementation-plan/step-10-media-viewers.md)).
+4. **Step 11d — prefetch** subdirectories on the NAS.
+5. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
+6. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
+7. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
+8. **Release workflow** — Developer ID signing + notarisation on tag ([release.md](release.md)).
 
 ### Measured (dev build, M-series Mac)
 
