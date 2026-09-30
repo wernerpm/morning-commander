@@ -28,3 +28,12 @@ logs/
 tmp/
 temp/
 *.tmp
+
+# Test output
+test-results/
+playwright-report/
+*.png
+!src-tauri/icons/*.png
+
+# Claude Code local state (agent worktrees)
+.claude/
