@@ -13,8 +13,10 @@ use std::sync::Arc;
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let hub = hub::Hub::new().expect("failed to start filesystem watcher");
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    #[cfg(all(feature = "webdriver", debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_webdriver::init());
+    builder
         .manage(hub)
         .manage(Arc::new(ops::Ops::default()))
         .invoke_handler(tauri::generate_handler![

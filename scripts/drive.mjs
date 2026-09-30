@@ -4,7 +4,8 @@
 //
 // Steps:
 //   key:Enter  key:Meta+r  key:F7     press a key chord (W3C key actions)
-//   type:hello                        type text
+//   type:hello                        type text (note: appends; doesn't replace a selection)
+//   fill:/some/path                   set the focused input's value (use for dialogs)
 //   wait:500                          sleep milliseconds
 //   eval:<js>                         run JS in the page, print the JSON result
 //   shot:out.png                      save a screenshot of the webview
@@ -69,6 +70,10 @@ try {
     const arg = rest.join(":");
     if (cmd === "key") await chord(arg);
     else if (cmd === "type") for (const ch of arg) await keys([ch]);
+    else if (cmd === "fill")
+      await evalJs(
+        `const el = document.activeElement; el.value = ${JSON.stringify(arg)}; el.dispatchEvent(new Event("input", { bubbles: true })); return el.value;`,
+      );
     else if (cmd === "wait") await new Promise((r) => setTimeout(r, Number(arg)));
     else if (cmd === "eval") console.log(JSON.stringify(await evalJs(arg), null, 2));
     else if (cmd === "state") console.log(JSON.stringify(await evalJs(STATE_JS), null, 2));

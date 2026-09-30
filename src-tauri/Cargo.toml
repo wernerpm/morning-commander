@@ -32,6 +32,7 @@ thiserror = "2.0.21"
 unicode-normalization = "0.1.25"
 log = "0.4.34"
 env_logger = "0.11.11"
+tauri-plugin-webdriver = { version = "0.2.3", optional = true }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -44,3 +45,8 @@ strip = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[features]
+# Debug-only W3C WebDriver server on 127.0.0.1:4445 for driving the real app
+# (see docs/testing.md). Never enable for release builds.
+webdriver = ["dep:tauri-plugin-webdriver"]
