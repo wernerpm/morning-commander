@@ -9,12 +9,13 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-use crate::model::{OpEvent, OpKind};
+use crate::model::{ConflictChoice, OpEvent, OpKind};
 
 pub type OpSink = Arc<dyn Fn(OpEvent) + Send + Sync>;
 
@@ -93,7 +94,13 @@ pub fn trash(paths: &[PathBuf]) -> Result<(), String> {
 #[derive(Default)]
 pub struct Ops {
     next_id: AtomicU64,
-    running: Mutex<HashMap<u64, Arc<AtomicBool>>>,
+    running: Mutex<HashMap<u64, Running>>,
+}
+
+struct Running {
+    cancel: Arc<AtomicBool>,
+    /// Answers to `OpEvent::Conflict`: (choice, apply to all remaining conflicts).
+    answers: Sender<(ConflictChoice, bool)>,
 }
 
 impl Ops {
@@ -111,12 +118,19 @@ impl Ops {
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let cancel = Arc::new(AtomicBool::new(false));
-        self.running.lock().insert(id, cancel.clone());
+        let (tx, rx) = mpsc::channel();
+        self.running.lock().insert(
+            id,
+            Running {
+                cancel: cancel.clone(),
+                answers: tx,
+            },
+        );
         let ops = self.clone();
         thread::Builder::new()
             .name(format!("mc-op-{id}"))
             .spawn(move || {
-                let mut job = Job::new(id, cancel, sink.clone());
+                let mut job = Job::new(id, cancel, sink.clone(), rx);
                 let outcome = job.run(kind, &sources, &dest_dir);
                 ops.running.lock().remove(&id);
                 sink(match outcome {
@@ -132,8 +146,15 @@ impl Ops {
     }
 
     pub fn cancel(&self, id: u64) {
-        if let Some(flag) = self.running.lock().get(&id) {
-            flag.store(true, Ordering::Relaxed);
+        if let Some(r) = self.running.lock().get(&id) {
+            r.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Answer the pending conflict of operation `id`.
+    pub fn resolve(&self, id: u64, choice: ConflictChoice, apply_to_all: bool) {
+        if let Some(r) = self.running.lock().get(&id) {
+            let _ = r.answers.send((choice, apply_to_all));
         }
     }
 }
@@ -156,14 +177,24 @@ struct Job {
     bytes_total: u64,
     current: String,
     last_progress: Option<Instant>,
+    answers: Receiver<(ConflictChoice, bool)>,
+    /// Set when the user picked "apply to all" for a conflict.
+    policy: Option<ConflictChoice>,
 }
 
 impl Job {
-    fn new(id: u64, cancel: Arc<AtomicBool>, sink: OpSink) -> Self {
+    fn new(
+        id: u64,
+        cancel: Arc<AtomicBool>,
+        sink: OpSink,
+        answers: Receiver<(ConflictChoice, bool)>,
+    ) -> Self {
         Self {
             id,
             cancel,
             sink,
+            answers,
+            policy: None,
             errors: Vec::new(),
             files_done: 0,
             files_total: 0,
@@ -197,7 +228,7 @@ impl Job {
             return Ok(());
         };
         let label = name.to_string_lossy().into_owned();
-        let dst = dest_dir.join(name);
+        let mut dst = dest_dir.join(name);
         let src_meta = match fs::symlink_metadata(src) {
             Ok(m) => m,
             Err(e) => {
@@ -211,12 +242,37 @@ impl Job {
             return Ok(());
         }
         if fs::symlink_metadata(&dst).is_ok() {
-            self.errors
-                .push(format!("{label}: already exists, skipped"));
-            let (files, bytes) = measure(src);
-            self.files_done += files;
-            self.bytes_done += bytes;
-            return Ok(());
+            let same = same_file(src, &dst);
+            let choice = if same {
+                // Copying onto itself (e.g. into the same directory): keep both, like
+                // Finder. Moving onto itself is a no-op.
+                if kind == OpKind::Move {
+                    ConflictChoice::Skip
+                } else {
+                    ConflictChoice::KeepBoth
+                }
+            } else {
+                self.ask(&dst)?
+            };
+            match choice {
+                ConflictChoice::Cancel => return Err(Cancelled),
+                ConflictChoice::Skip => {
+                    let (files, bytes) = measure(src);
+                    self.files_done += files;
+                    self.bytes_done += bytes;
+                    self.progress(false);
+                    return Ok(());
+                }
+                ConflictChoice::KeepBoth => dst = free_name(dest_dir, name),
+                ConflictChoice::Overwrite => {
+                    if let Err(e) = trash(std::slice::from_ref(&dst)) {
+                        self.errors.push(format!(
+                            "{label}: could not move existing item to Trash: {e}"
+                        ));
+                        return Ok(());
+                    }
+                }
+            }
         }
         if kind == OpKind::Move {
             match fs::rename(src, &dst) {
@@ -339,6 +395,31 @@ impl Job {
         Ok(())
     }
 
+    /// Ask the frontend what to do about an existing destination, unless an
+    /// "apply to all" answer was already given. Blocks until answered or cancelled.
+    fn ask(&mut self, dst: &Path) -> Result<ConflictChoice, Cancelled> {
+        if let Some(p) = self.policy {
+            return Ok(p);
+        }
+        (self.sink)(OpEvent::Conflict {
+            id: self.id,
+            path: dst.display().to_string(),
+        });
+        loop {
+            self.check_cancel()?;
+            match self.answers.recv_timeout(Duration::from_millis(100)) {
+                Ok((choice, all)) => {
+                    if all {
+                        self.policy = Some(choice);
+                    }
+                    return Ok(choice);
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => return Err(Cancelled),
+            }
+        }
+    }
+
     fn check_cancel(&self) -> Result<(), Cancelled> {
         if self.cancel.load(Ordering::Relaxed) {
             Err(Cancelled)
@@ -402,6 +483,26 @@ fn measure(path: &Path) -> (u64, u64) {
     }
 }
 
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::symlink_metadata(a), fs::symlink_metadata(b)) {
+        (Ok(x), Ok(y)) => x.dev() == y.dev() && x.ino() == y.ino(),
+        _ => false,
+    }
+}
+
+/// First free "stem N.ext" in `dir`, starting at 2 (Finder style).
+fn free_name(dir: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    let name = name.to_string_lossy();
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (&name[..], ""),
+    };
+    (2..)
+        .map(|n| dir.join(format!("{stem} {n}{ext}")))
+        .find(|p| fs::symlink_metadata(p).is_err())
+        .expect("unbounded range always yields a free name")
+}
+
 /// Best effort: permissions and modification time.
 fn copy_metadata(meta: &fs::Metadata, dst: &Path) {
     if let Err(e) = fs::set_permissions(dst, meta.permissions()) {
@@ -425,6 +526,95 @@ mod tests {
         let log: Arc<Mutex<Vec<OpEvent>>> = Arc::default();
         let l = log.clone();
         (Arc::new(move |e| l.lock().push(e)), log)
+    }
+
+    fn wait_conflict(log: &Arc<Mutex<Vec<OpEvent>>>) -> String {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if let Some(path) = log.lock().iter().find_map(|e| match e {
+                OpEvent::Conflict { path, .. } => Some(path.clone()),
+                _ => None,
+            }) {
+                return path;
+            }
+            assert!(Instant::now() < deadline, "no conflict event");
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn keep_both_picks_a_free_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::create_dir(r.join("dest")).unwrap();
+        fs::write(r.join("a.txt"), b"new").unwrap();
+        fs::write(r.join("dest/a.txt"), b"old").unwrap();
+        fs::write(r.join("dest/a 2.txt"), b"older").unwrap();
+        let ops = Arc::new(Ops::default());
+        let (sink, log) = collect_sink();
+        let id = ops
+            .start(OpKind::Copy, vec![r.join("a.txt")], r.join("dest"), sink)
+            .unwrap();
+        wait_conflict(&log);
+        ops.resolve(id, ConflictChoice::KeepBoth, false);
+        assert!(matches!(wait_final(&log), OpEvent::Done { .. }));
+        assert_eq!(fs::read(r.join("dest/a 3.txt")).unwrap(), b"new");
+        assert_eq!(fs::read(r.join("dest/a.txt")).unwrap(), b"old");
+    }
+
+    #[test]
+    fn copy_into_same_directory_keeps_both_without_asking() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("notes"), b"x").unwrap();
+        let ops = Arc::new(Ops::default());
+        let (sink, log) = collect_sink();
+        ops.start(OpKind::Copy, vec![r.join("notes")], r.to_path_buf(), sink)
+            .unwrap();
+        assert!(matches!(wait_final(&log), OpEvent::Done { .. }));
+        assert_eq!(fs::read(r.join("notes 2")).unwrap(), b"x");
+        assert!(
+            !log.lock()
+                .iter()
+                .any(|e| matches!(e, OpEvent::Conflict { .. }))
+        );
+    }
+
+    #[test]
+    fn apply_to_all_and_cancel_while_asking() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::create_dir(r.join("dest")).unwrap();
+        for n in ["a", "b", "c"] {
+            fs::write(r.join(n), b"new").unwrap();
+            fs::write(r.join("dest").join(n), b"old").unwrap();
+        }
+        let ops = Arc::new(Ops::default());
+        let (sink, log) = collect_sink();
+        let sources = vec![r.join("a"), r.join("b"), r.join("c")];
+        let id = ops
+            .start(OpKind::Copy, sources.clone(), r.join("dest"), sink)
+            .unwrap();
+        wait_conflict(&log);
+        ops.resolve(id, ConflictChoice::KeepBoth, true);
+        assert!(matches!(wait_final(&log), OpEvent::Done { .. }));
+        let conflicts = log
+            .lock()
+            .iter()
+            .filter(|e| matches!(e, OpEvent::Conflict { .. }))
+            .count();
+        assert_eq!(conflicts, 1, "apply-to-all must not ask again");
+        for n in ["a 2", "b 2", "c 2"] {
+            assert!(r.join("dest").join(n).exists(), "{n}");
+        }
+
+        let (sink, log) = collect_sink();
+        let id = ops
+            .start(OpKind::Copy, sources, r.join("dest"), sink)
+            .unwrap();
+        wait_conflict(&log);
+        ops.cancel(id);
+        assert!(matches!(wait_final(&log), OpEvent::Cancelled { .. }));
     }
 
     fn wait_final(log: &Arc<Mutex<Vec<OpEvent>>>) -> OpEvent {
@@ -500,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn copies_nested_tree_preserving_mtime_and_skipping_conflicts() {
+    fn copies_nested_tree_preserving_mtime_and_asking_on_conflicts() {
         let tmp = tempfile::tempdir().unwrap();
         let r = tmp.path();
         make_tree(r);
@@ -515,18 +705,19 @@ mod tests {
 
         let ops = Arc::new(Ops::default());
         let (sink, log) = collect_sink();
-        ops.start(
-            OpKind::Copy,
-            vec![r.join("src"), r.join("single.txt")],
-            r.join("dest"),
-            sink,
-        )
-        .unwrap();
+        let id = ops
+            .start(
+                OpKind::Copy,
+                vec![r.join("src"), r.join("single.txt")],
+                r.join("dest"),
+                sink,
+            )
+            .unwrap();
+        let conflict = wait_conflict(&log);
+        assert!(conflict.ends_with("dest/single.txt"), "{conflict}");
+        ops.resolve(id, ConflictChoice::Skip, false);
         match wait_final(&log) {
-            OpEvent::Done { errors, .. } => {
-                assert_eq!(errors.len(), 1, "{errors:?}");
-                assert!(errors[0].contains("single.txt"));
-            }
+            OpEvent::Done { errors, .. } => assert!(errors.is_empty(), "{errors:?}"),
             other => panic!("{other:?}"),
         }
         assert_eq!(

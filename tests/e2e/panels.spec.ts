@@ -145,3 +145,38 @@ test("bookmarks: add current folder, filter, open", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo/Pictures");
 });
+
+async function copyReadmeIntoDocumentsTwice(page: Page) {
+  // Right panel → Documents, then copy readme.txt there twice.
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("doc", { delay: 30 });
+  await page.keyboard.press("Enter");
+  await expect(panel(page, 1).locator(".panel-path")).toHaveText("/Users/demo/Documents");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("rea", { delay: 30 });
+  await page.keyboard.press("F5");
+  await page.keyboard.press("Enter");
+  await expect(panel(page, 1).locator('.row[data-name="readme.txt"]')).toBeVisible();
+  await page.keyboard.press("F5");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "File exists" })).toBeVisible();
+}
+
+test("copy conflict: keep both", async ({ page }) => {
+  await copyReadmeIntoDocumentsTwice(page);
+  await page.keyboard.press("k");
+  await expect(panel(page, 1).locator('.row[data-name="readme 2.txt"]')).toBeVisible();
+  // the dialog's letters must not leak into type-to-jump
+  expect(await cursorName(page)).toBe("readme.txt");
+});
+
+test("copy conflict: skip and cancel", async ({ page }) => {
+  await copyReadmeIntoDocumentsTwice(page);
+  await page.keyboard.press("Enter"); // skip
+  await expect(page.getByRole("dialog", { name: "File exists" })).toHaveCount(0);
+  await expect(panel(page, 1).locator('.row[data-name="readme 2.txt"]')).toHaveCount(0);
+  await page.keyboard.press("F5");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape"); // cancel
+  await expect(page.locator(".statusline")).toContainText("cancelled");
+});

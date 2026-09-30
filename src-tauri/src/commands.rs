@@ -11,7 +11,7 @@ use tauri::ipc::Channel;
 
 use crate::hub::{Hub, PanelSink};
 use crate::listing::{expand_tilde, home_dir as home};
-use crate::model::{OpEvent, OpKind, PanelEvent, TextPreview};
+use crate::model::{ConflictChoice, OpEvent, OpKind, PanelEvent, TextPreview};
 use crate::ops::{self, OpSink, Ops};
 use crate::text;
 
@@ -100,6 +100,16 @@ pub fn copy_move(
 #[tauri::command]
 pub fn cancel_op(ops: State<'_, Arc<Ops>>, id: u64) {
     ops.cancel(id);
+}
+
+#[tauri::command]
+pub fn resolve_conflict(
+    ops: State<'_, Arc<Ops>>,
+    id: u64,
+    choice: ConflictChoice,
+    apply_to_all: bool,
+) {
+    ops.resolve(id, choice, apply_to_all);
 }
 
 #[tauri::command]

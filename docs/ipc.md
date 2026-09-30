@@ -39,9 +39,12 @@ type OpKind = "copy" | "move";
 
 type OpEvent =
   | { type: "progress"; id: number; filesDone: number; filesTotal: number; bytesDone: number; bytesTotal: number; current: string }
-  | { type: "conflict"; id: number; path: string }   // v2: ask the user; v1 skips/errs, see below
+  | { type: "conflict"; id: number; path: string }   // destination exists; op waits for resolve_conflict
   | { type: "done"; id: number; errors: string[] }
   | { type: "cancelled"; id: number };
+
+// Overwrite moves the existing item to the Trash first; keepBoth uses "name 2.ext".
+type ConflictChoice = "overwrite" | "skip" | "keepBoth" | "cancel";
 
 interface TextPreview { text: string; truncated: boolean; binary: boolean; size: number }
 ```
@@ -60,7 +63,8 @@ interface TextPreview { text: string; truncated: boolean; binary: boolean; size:
 | `rename` | `dir, from, to: string` | `void` | Errors if `to` exists (case-only renames allowed). Validates the name. |
 | `mkdir` | `dir, name: string` | `void` | |
 | `trash` | `paths: string[]` | `void` | NSFileManager trash |
-| `copy_move` | `kind: OpKind, sources: string[], destDir: string, onEvent: Channel<OpEvent>` | `number` (op id) | Runs in background. v1 conflict policy: skip existing and report in `done.errors`. |
+| `copy_move` | `kind: OpKind, sources: string[], destDir: string, onEvent: Channel<OpEvent>` | `number` (op id) | Runs in background. When a top-level destination exists it emits `conflict` and blocks until `resolve_conflict` (or `cancel_op`). Copying an item onto itself (same dir) keeps both without asking; moving onto itself is a no-op. |
+| `resolve_conflict` | `id: number, choice: ConflictChoice, applyToAll: boolean` | `void` | `applyToAll` reuses the choice for the remaining conflicts of this op. |
 | `cancel_op` | `id: number` | `void` | |
 | `open_default` | `path: string` | `void` | macOS `open` |
 | `read_text` | `path: string, maxBytes: number` | `TextPreview` | For the text viewer |

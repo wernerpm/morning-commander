@@ -3,7 +3,7 @@
 // Tests can reach it as `window.__mock` to simulate external FS changes.
 
 import type { Backend } from "./index";
-import type { Entry, OpEvent, PanelEvent, PanelId } from "./types";
+import type { ConflictChoice, Entry, PanelEvent, PanelId } from "./types";
 
 interface MockNode {
   kind: "file" | "dir";
@@ -60,6 +60,13 @@ class MockFs {
   root = seed();
   subs = new Map<PanelId, { path: string; cb: (e: PanelEvent) => void }>();
   nextOp = 1;
+  ops = new Map<number, { cancelled: boolean; answer: null | ((c: [ConflictChoice, boolean]) => void) }>();
+
+  freeName(dir: MockNode, name: string): string {
+    const dot = name.lastIndexOf(".");
+    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+    for (let n = 2; ; n++) if (!dir.children!.has(`${stem} ${n}${ext}`)) return `${stem} ${n}${ext}`;
+  }
 
   norm(path: string): string {
     if (path === "~" || path.startsWith("~/")) path = HOME + path.slice(1);
@@ -181,29 +188,64 @@ export const mockBackend: Backend = {
   },
   async copyMove(kind, sources, destDir, onEvent) {
     const id = fs.nextOp++;
-    const dest = fs.lookup(destDir);
-    const errors: string[] = [];
-    sources.forEach((src, i) => {
-      const [d, name] = fs.split(src);
-      const node = fs.lookup(src);
-      if (!node || !dest?.children) return errors.push(`${src}: not found`);
-      if (dest.children.has(name)) return errors.push(`${name}: already exists, skipped`);
-      dest.children.set(name, kind === "copy" ? structuredClone(node) : node);
-      if (kind === "move") {
-        fs.lookup(d)!.children!.delete(name);
-        fs.notify(d, [name], []);
+    const op = { cancelled: false, answer: null as null | ((c: [ConflictChoice, boolean]) => void) };
+    fs.ops.set(id, op);
+    const ask = (path: string) =>
+      new Promise<[ConflictChoice, boolean]>((resolve) => {
+        op.answer = resolve;
+        onEvent({ type: "conflict", id, path });
+      });
+    void (async () => {
+      const errors: string[] = [];
+      let policy: ConflictChoice | null = null;
+      const destPath = fs.norm(destDir);
+      const dest = fs.lookup(destPath);
+      for (const [i, src] of sources.entries()) {
+        await new Promise((r) => setTimeout(r, 10));
+        if (op.cancelled) return onEvent({ type: "cancelled", id });
+        const [d, name] = fs.split(src);
+        const node = fs.lookup(src);
+        if (!node || !dest?.children) {
+          errors.push(`${src}: not found`);
+          continue;
+        }
+        let target = name;
+        if (dest.children.has(name)) {
+          let choice: ConflictChoice;
+          if (d === destPath) choice = kind === "copy" ? "keepBoth" : "skip";
+          else if (policy) choice = policy;
+          else {
+            const [c, all] = await ask(`${destPath}/${name}`);
+            choice = c;
+            if (all) policy = c;
+          }
+          if (choice === "cancel") return onEvent({ type: "cancelled", id });
+          if (choice === "skip") continue;
+          if (choice === "keepBoth") target = fs.freeName(dest, name);
+          if (choice === "overwrite") dest.children.delete(name);
+        }
+        dest.children.set(target, kind === "copy" ? structuredClone(node) : node);
+        if (kind === "move") {
+          fs.lookup(d)!.children!.delete(name);
+          fs.notify(d, [name], []);
+        }
+        fs.notify(destPath, [], [target]);
+        onEvent({ type: "progress", id, filesDone: i + 1, filesTotal: sources.length, bytesDone: 0, bytesTotal: 0, current: name });
       }
-      fs.notify(fs.norm(destDir), [], [name]);
-      const ev: OpEvent = {
-        type: "progress", id, filesDone: i + 1, filesTotal: sources.length,
-        bytesDone: 0, bytesTotal: 0, current: name,
-      };
-      setTimeout(() => onEvent(ev), 10);
-    });
-    setTimeout(() => onEvent({ type: "done", id, errors }), 50);
+      fs.ops.delete(id);
+      onEvent({ type: "done", id, errors });
+    })();
     return id;
   },
-  async cancelOp() {},
+  async cancelOp(id) {
+    const op = fs.ops.get(id);
+    if (!op) return;
+    op.cancelled = true;
+    op.answer?.(["cancel", false]);
+  },
+  async resolveConflict(id, choice, applyToAll) {
+    fs.ops.get(id)?.answer?.([choice, applyToAll]);
+  },
   async openDefault(path) {
     console.info("[mock] open", path);
   },

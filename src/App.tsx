@@ -1,5 +1,6 @@
 import { batch, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import Bookmarks, { loadBookmarks, saveBookmarks, type Bookmark } from "./app/Bookmarks";
+import ConflictDialog from "./app/ConflictDialog";
 import Dialog, { type DialogSpec } from "./app/Dialog";
 import OpProgress, { type OpState } from "./app/OpProgress";
 import { backend } from "./ipc";
@@ -30,6 +31,7 @@ export default function App() {
   const [renaming, setRenaming] = createSignal<{ panel: PanelId; name: string } | null>(null);
   const [dialog, setDialog] = createSignal<DialogSpec | null>(null);
   const [op, setOp] = createSignal<OpState | null>(null);
+  const [conflict, setConflict] = createSignal<{ id: number; path: string } | null>(null);
   const [message, setMessage] = createSignal<{ text: string; error: boolean } | null>(null);
   const [help, setHelp] = createSignal(false);
   const [bookmarks, setBookmarks] = createSignal<Bookmark[]>([]);
@@ -174,13 +176,17 @@ export default function App() {
         (ev) => {
           if (ev.type === "progress") {
             setOp({ ...ev, title });
+          } else if (ev.type === "conflict") {
+            setConflict({ id: ev.id, path: ev.path });
           } else if (ev.type === "done") {
             setOp(null);
+            setConflict(null);
             src.selectAll(false);
             if (ev.errors.length) flash(`${title} finished with ${ev.errors.length} problem(s): ${ev.errors[0]}`, true);
             else flash(`${kind === "copy" ? "Copied" : "Moved"} ${describe(targets)}`);
           } else if (ev.type === "cancelled") {
             setOp(null);
+            setConflict(null);
             flash(`${title} cancelled`);
           }
         },
@@ -281,7 +287,7 @@ export default function App() {
   }
 
   function onKeyDown(ev: KeyboardEvent) {
-    if (viewer() || dialog() || renaming() || showBookmarks()) return; // they own the keyboard
+    if (viewer() || dialog() || renaming() || showBookmarks() || conflict()) return; // they own the keyboard
     if (help()) {
       if (ev.key === "Escape" || ev.key === "F1") {
         ev.preventDefault();
@@ -385,6 +391,18 @@ export default function App() {
           onRemove={(b) => updateBookmarks(bookmarks().filter((x) => x !== b))}
           onClose={() => setShowBookmarks(false)}
         />
+      </Show>
+      <Show when={conflict()}>
+        {(c) => (
+          <ConflictDialog
+            path={c().path}
+            onAnswer={(choice, all) => {
+              const id = c().id;
+              setConflict(null);
+              void backend.resolveConflict(id, choice, all);
+            }}
+          />
+        )}
       </Show>
       <Show when={dialog()}>{(d) => <Dialog spec={d()} onClose={() => setDialog(null)} />}</Show>
       <Show when={help()}>

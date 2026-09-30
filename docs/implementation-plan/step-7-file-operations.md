@@ -1,6 +1,6 @@
 # Step 7 — File operations (backend)
 
-> Status: DONE (backend). The frontend dialogs, progress UI and conflict prompts are tracked separately.
+> Status: DONE — backend, progress UI, confirm dialogs and conflict prompts (Skip / Keep both / Replace / Cancel, apply-to-all).
 
 ## Goals
 
@@ -10,7 +10,7 @@ Rename, create folders, move to Trash, and copy or move files between panels, wi
 
 - **Operations never touch the cache or send panel events.** The watcher reports their effects like any other change. The frontend may apply an optimistic rename, but the watcher patch is authoritative.
 - **Nothing is permanently deleted.** `trash` uses `NSFileManager` (`trash` crate, `DeleteMethod::NsFileManager`: no Finder Automation prompt). A move deletes its source only after an error-free copy.
-- **Conflicts never overwrite.** v1 policy: skip and report in `Done.errors`.
+- **Conflicts never destroy data.** A top-level conflict emits `OpEvent::Conflict { path }` and the job thread blocks (polling the cancel flag every 100 ms) until `resolve_conflict(id, choice, applyToAll)` answers. Replace moves the existing item to the Trash before copying; Keep both picks `stem N.ext` (N ≥ 2); copying onto itself keeps both automatically. Conflicts *inside* a copied directory tree are not asked about (the destination directory is new, so they can't happen except for races).
 - All errors are human-readable `String`s prefixed with the affected name.
 
 ## Files
@@ -78,7 +78,10 @@ Reads at most `min(maxBytes, 16 MiB)`. It's binary if the first 8 KiB contain a 
 
 - `validates_names`, `mkdir_creates_and_rejects_existing`
 - `rename_basic_conflict_and_case_only`: `c.txt` → `C.txt` on APFS keeps the new case.
-- `copies_nested_tree_preserving_mtime_and_skipping_conflicts`: nested dirs, symlink kept as a symlink, mtime preserved, a conflict is skipped and reported, progress events are emitted.
+- `copies_nested_tree_preserving_mtime_and_asking_on_conflicts`: nested dirs, symlink kept as a symlink, mtime preserved, a conflict is asked about and skipped, progress events are emitted.
+- `keep_both_picks_a_free_name`, `copy_into_same_directory_keeps_both_without_asking`, `apply_to_all_and_cancel_while_asking`.
+- Replace isn't unit-tested because it would put temp files into the real Trash; verified manually.
+- Frontend: `ConflictDialog.tsx`; e2e `copy conflict: keep both`, `copy conflict: skip and cancel` (mock implements the same protocol).
 - `moves_and_refuses_moving_into_itself`
 - `cancel_removes_partial_file`: 512 MiB sparse file, cancel after the first bytes; tolerates the copy winning the race.
 - `text::tests::*`: truncation on a char boundary, binary detection (NUL, Latin-1), directory rejection.
@@ -90,7 +93,7 @@ Reads at most `min(maxBytes, 16 MiB)`. It's binary if the first 8 KiB contain a 
 
 ## Follow-ups
 
-- Conflict prompts: emit `OpEvent::Conflict` and wait for a `resolve_conflict(id, choice)` command (overwrite / skip / rename / apply to all).
+- Merge directories on conflict (MC-style) instead of replace/keep-both only.
 - `copyfile(3)` with `COPYFILE_CLONE | COPYFILE_ALL` for extended attributes, ACLs and Finder tags; APFS clones for large files too.
 - Preserve directory and file ownership when running as root (not relevant for a personal app).
 - An operations queue: run one job at a time per destination volume.

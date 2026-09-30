@@ -27,6 +27,7 @@ pub fn run() {
             commands::trash,
             commands::copy_move,
             commands::cancel_op,
+            commands::resolve_conflict,
             commands::open_default,
             commands::read_text,
         ])

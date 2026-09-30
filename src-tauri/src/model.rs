@@ -53,6 +53,18 @@ pub enum OpKind {
     Move,
 }
 
+/// The user's answer to an `OpEvent::Conflict`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictChoice {
+    /// Move the existing destination to the Trash, then copy/move.
+    Overwrite,
+    Skip,
+    /// Copy/move under a free name ("name 2.ext").
+    KeepBoth,
+    Cancel,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(
     tag = "type",

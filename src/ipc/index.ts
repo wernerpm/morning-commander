@@ -2,7 +2,7 @@
 // in-memory mock when running outside Tauri (plain browser, Playwright).
 
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { OpEvent, OpKind, PanelEvent, PanelId, TextPreview } from "./types";
+import type { ConflictChoice, OpEvent, OpKind, PanelEvent, PanelId, TextPreview } from "./types";
 import { mockBackend } from "./mock";
 
 export const inTauri =
@@ -16,6 +16,7 @@ export interface Backend {
   trash(paths: string[]): Promise<void>;
   copyMove(kind: OpKind, sources: string[], destDir: string, onEvent: (e: OpEvent) => void): Promise<number>;
   cancelOp(id: number): Promise<void>;
+  resolveConflict(id: number, choice: ConflictChoice, applyToAll: boolean): Promise<void>;
   openDefault(path: string): Promise<void>;
   readText(path: string, maxBytes: number): Promise<TextPreview>;
   fileUrl(path: string): string;
@@ -37,6 +38,7 @@ const tauriBackend: Backend = {
     return invoke<number>("copy_move", { kind, sources, destDir, onEvent: ch });
   },
   cancelOp: (id) => invoke("cancel_op", { id }),
+  resolveConflict: (id, choice, applyToAll) => invoke("resolve_conflict", { id, choice, applyToAll }),
   openDefault: (path) => invoke("open_default", { path }),
   readText: (path, maxBytes) => invoke<TextPreview>("read_text", { path, maxBytes }),
   fileUrl: (path) => convertFileSrc(path),

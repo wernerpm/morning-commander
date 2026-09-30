@@ -18,6 +18,9 @@ export type PanelEvent =
 
 export type OpKind = "copy" | "move";
 
+/** Answer to an OpEvent "conflict". Overwrite moves the existing item to the Trash first. */
+export type ConflictChoice = "overwrite" | "skip" | "keepBoth" | "cancel";
+
 export type OpEvent =
   | {
       type: "progress";
