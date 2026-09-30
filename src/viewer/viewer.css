@@ -1,0 +1,207 @@
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--viewer-bg, #111);
+  color: var(--fg, #ddd);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, system-ui, sans-serif);
+  outline: none;
+}
+
+.viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg, #1e1e1e);
+  border-bottom: 1px solid var(--border, #333);
+  font-size: 13px;
+  min-height: 28px;
+}
+
+.viewer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.viewer-meta {
+  color: var(--muted, #888);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.viewer-close {
+  background: none;
+  border: none;
+  color: var(--muted, #888);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.viewer-close:hover {
+  color: var(--fg, #ddd);
+}
+
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.viewer-hint {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--muted, #888);
+  background: var(--bg, #1e1e1e);
+  border-top: 1px solid var(--border, #333);
+}
+
+.viewer-status {
+  color: var(--muted, #888);
+}
+
+/* Image */
+.viewer-image {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.viewer-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.viewer-image.zoomed {
+  overflow: auto;
+  display: block;
+  text-align: center;
+}
+.viewer-image.zoomed img {
+  max-width: none;
+  max-height: none;
+  height: auto;
+}
+
+/* PDF */
+.viewer-pdf {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* Video / audio */
+.viewer-video {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  outline: none;
+}
+.viewer-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.viewer-audio-name {
+  font-size: 16px;
+}
+.viewer-audio audio {
+  width: min(600px, 80vw);
+}
+
+/* Text */
+.viewer-text {
+  align-self: stretch;
+  flex: 1;
+  overflow: auto;
+  outline: none;
+  background: var(--bg, #1e1e1e);
+}
+.viewer-truncated {
+  position: sticky;
+  top: 0;
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--accent, #3a5a8c);
+  color: #fff;
+}
+.viewer-text-grid {
+  display: flex;
+  align-items: flex-start;
+  min-width: max-content;
+}
+.viewer-text pre {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 4;
+}
+.viewer-gutter {
+  color: var(--muted, #666);
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid var(--border, #333);
+  position: sticky;
+  left: 0;
+  background: var(--bg, #1e1e1e);
+}
+.viewer-code {
+  white-space: pre;
+}
+
+/* Fallback / info card */
+.viewer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 32px;
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  background: var(--bg, #1e1e1e);
+  max-width: 80%;
+}
+.viewer-card-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.viewer-card-name {
+  word-break: break-all;
+}
+.viewer-card-detail {
+  color: var(--muted, #888);
+  font-size: 12px;
+}
+.viewer-card-open {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent, #3a5a8c);
+  background: var(--accent, #3a5a8c);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.viewer-card-open kbd {
+  font-family: inherit;
+  font-size: 11px;
+  opacity: 0.8;
+  margin-left: 4px;
+}
