@@ -10,6 +10,11 @@
 //! - Not cached: read before the snapshot is sent (`stale: false`).
 //! - `refresh`: a cached listing is sent `stale: true` and always fully re-read.
 //!
+//! Network directories shown by a panel are polled (FSEvents doesn't work there): every
+//! [`HubConfig::poll_interval`] the same mtime-shortcut revalidation runs, backing off to
+//! [`POLL_IDLE_INTERVAL`] after [`POLL_BACKOFF_AFTER`] without changes; navigation resets
+//! it. [`Hub::recheck`] does the same immediately after the app's own file operations.
+//!
 //! Invariants:
 //! - Every directory in the memory cache is watched.
 //! - A directory is watched iff it is cached, shown by a panel, or being loaded
@@ -32,7 +37,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak, mpsc};
 use std::thread;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use parking_lot::{Mutex, MutexGuard};
 
@@ -59,6 +64,12 @@ const LIVENESS_INTERVAL: Duration = Duration::from_secs(1);
 /// How often dirty listings are written to the disk cache.
 const PERSIST_INTERVAL: Duration = Duration::from_secs(2);
 
+/// Default interval for polling shown network directories.
+pub const POLL_INTERVAL: Duration = Duration::from_secs(3);
+/// Polling interval once a directory hasn't changed for [`POLL_BACKOFF_AFTER`].
+pub const POLL_IDLE_INTERVAL: Duration = Duration::from_secs(10);
+pub const POLL_BACKOFF_AFTER: Duration = Duration::from_secs(60);
+
 #[derive(Debug, Clone)]
 pub struct HubConfig {
     /// Directory of the on-disk listing cache (`~/.morning-commander/cache`); `None`
@@ -68,6 +79,8 @@ pub struct HubConfig {
     pub cache_max_age_days: u64,
     /// Treat every directory as being on a network volume (`MC_FORCE_NETWORK=1`).
     pub force_network: bool,
+    /// How often shown network directories are checked for changes.
+    pub poll_interval: Duration,
 }
 
 impl Default for HubConfig {
@@ -77,8 +90,15 @@ impl Default for HubConfig {
             cache_max_bytes: DEFAULT_CACHE_MAX_BYTES,
             cache_max_age_days: DEFAULT_CACHE_MAX_AGE_DAYS,
             force_network: false,
+            poll_interval: POLL_INTERVAL,
         }
     }
+}
+
+/// Polling schedule of one shown network directory.
+struct Poll {
+    next: Instant,
+    last_change: Instant,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -123,6 +143,8 @@ struct State {
     awaiting: HashMap<u8, Awaiting>,
     /// Background revalidations in flight: dir → (id, full re-read).
     revalidating: HashMap<PathBuf, (u64, bool)>,
+    /// Shown network directories being polled.
+    polls: HashMap<PathBuf, Poll>,
 }
 
 enum Update {
@@ -148,6 +170,8 @@ pub struct Hub {
     batches: mpsc::Sender<WatchBatch>,
     weak: Weak<Hub>,
     full_reads: AtomicU64,
+    poll_interval: Duration,
+    polls_started: AtomicU64,
 }
 
 impl Hub {
@@ -176,6 +200,8 @@ impl Hub {
             batches: tx,
             weak: weak.clone(),
             full_reads: AtomicU64::new(0),
+            poll_interval: config.poll_interval,
+            polls_started: AtomicU64::new(0),
         });
         let weak = Arc::downgrade(&hub);
         thread::Builder::new()
@@ -198,8 +224,14 @@ impl Hub {
                         let s = hub.state.lock();
                         s.panels.values().map(|p| p.dir.clone()).collect()
                     };
+                    let force = hub.force_network;
                     drop(hub);
-                    let missing: Vec<PathBuf> = dirs.into_iter().filter(|d| !d.is_dir()).collect();
+                    // Network directories are left to the poller: `is_dir` on an asleep or
+                    // unreachable NAS fails without the directory being gone.
+                    let missing: Vec<PathBuf> = dirs
+                        .into_iter()
+                        .filter(|d| !netvol::is_network(d, force) && !d.is_dir())
+                        .collect();
                     // Reported like a watcher event on the directory itself, so the
                     // regular "gone" handling (serialised with real events) applies.
                     if !missing.is_empty()
@@ -212,6 +244,19 @@ impl Hub {
                     {
                         break;
                     }
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        let weak = Arc::downgrade(&hub);
+        let tick =
+            (config.poll_interval / 4).clamp(Duration::from_millis(50), Duration::from_millis(500));
+        thread::Builder::new()
+            .name("mc-poll".into())
+            .spawn(move || {
+                loop {
+                    thread::sleep(tick);
+                    let Some(hub) = weak.upgrade() else { break };
+                    hub.poll_due(Instant::now());
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -546,8 +591,72 @@ impl Hub {
         } else {
             s.awaiting.remove(&panel);
         }
+        if network {
+            // Navigation (re)starts polling at the fast rate.
+            let now = Instant::now();
+            s.polls.insert(
+                dir.clone(),
+                Poll {
+                    next: now + self.poll_interval,
+                    last_change: now,
+                },
+            );
+        }
         s.panels.insert(panel, Subscription { dir, sink });
         self.gc(s);
+    }
+
+    /// Start the mtime-shortcut revalidation of every polled directory that is due, and
+    /// stop polling directories no panel shows any more.
+    fn poll_due(&self, now: Instant) {
+        let mut s = self.state.lock();
+        let shown: HashSet<PathBuf> = s.panels.values().map(|p| p.dir.clone()).collect();
+        s.polls.retain(|d, _| shown.contains(d));
+        let interval = self.poll_interval;
+        let due: Vec<PathBuf> = s
+            .polls
+            .iter_mut()
+            .filter(|(_, p)| p.next <= now)
+            .map(|(d, p)| {
+                let idle = now.duration_since(p.last_change) >= POLL_BACKOFF_AFTER;
+                p.next = now
+                    + if idle {
+                        POLL_IDLE_INTERVAL.max(interval)
+                    } else {
+                        interval
+                    };
+                d.clone()
+            })
+            .collect();
+        for dir in due {
+            if s.cache.contains(&dir) {
+                self.polls_started.fetch_add(1, Ordering::Relaxed);
+                self.start_revalidation(&mut s, &dir, true, false);
+            }
+        }
+    }
+
+    /// Re-check cached network directories now (after the app's own file operations,
+    /// which FSEvents may not report there). Local directories are left to the watcher.
+    pub fn recheck(&self, dirs: &[PathBuf]) {
+        let mut s = self.state.lock();
+        let now = Instant::now();
+        for dir in dirs {
+            let network = s.cache.peek(dir).is_some_and(|l| l.meta.network);
+            if !network {
+                continue;
+            }
+            if let Some(p) = s.polls.get_mut(dir) {
+                p.last_change = now;
+                p.next = now + self.poll_interval;
+            }
+            self.start_revalidation(&mut s, dir, true, false);
+        }
+    }
+
+    /// Number of poll-triggered revalidations started (tests).
+    pub fn polls_started(&self) -> u64 {
+        self.polls_started.load(Ordering::Relaxed)
     }
 
     /// Start a background revalidation of the cached `dir` unless one that is good enough
@@ -677,6 +786,11 @@ impl Hub {
                 p.mark_dirty(dir);
             }
             if !diff.is_empty() {
+                if let Some(p) = s.polls.get_mut(dir) {
+                    let now = Instant::now();
+                    p.last_change = now;
+                    p.next = p.next.min(now + self.poll_interval);
+                }
                 let path = dir.to_string_lossy().into_owned();
                 for sub in s.panels.values().filter(|p| p.dir == dir) {
                     (sub.sink)(PanelEvent::Patch {
@@ -1303,5 +1417,54 @@ mod tests {
         assert_eq!(hub.panel_dir(0), Some(root));
         hub.flush();
         assert!(!hub.persist.as_ref().unwrap().contains(&victim));
+    }
+
+    #[test]
+    fn shown_network_dirs_are_polled_and_rechecked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = fs::canonicalize(tmp.path()).unwrap();
+        fs::write(dir.join("a"), b"").unwrap();
+        let hub = Hub::new(HubConfig {
+            force_network: true,
+            poll_interval: Duration::from_millis(200),
+            ..HubConfig::default()
+        })
+        .unwrap();
+        let (s, log) = sink();
+        hub.open(0, dir.to_str().unwrap(), false, s);
+        let wait = |what: &str, cond: &dyn Fn() -> bool| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !cond() {
+                assert!(Instant::now() < deadline, "timed out waiting for {what}");
+                thread::sleep(Duration::from_millis(20));
+            }
+        };
+        wait("two polls", &|| hub.polls_started() >= 2);
+        assert_eq!(
+            hub.revalidation_reads(),
+            0,
+            "an unchanged dir must not be re-read"
+        );
+
+        // A change bumps the directory's mtime: the next poll re-reads and patches.
+        fs::write(dir.join("b"), b"").unwrap();
+        wait("re-read after change", &|| hub.revalidation_reads() >= 1);
+        wait_for(&log, "patch with b", |ev| {
+            patched_upsert(ev, "b")
+                || ev.iter().any(|e| matches!(e, PanelEvent::Snapshot { entries, .. } if entries.iter().any(|x| x.name == "b")))
+        });
+
+        // `recheck` re-reads a changed directory without waiting for the poll.
+        let reads = hub.revalidation_reads();
+        fs::write(dir.join("c"), b"").unwrap();
+        hub.recheck(std::slice::from_ref(&dir));
+        wait("recheck re-read", &|| hub.revalidation_reads() > reads);
+
+        // Navigating away stops polling the old directory.
+        let other = tempfile::tempdir().unwrap();
+        let (s2, _) = sink();
+        hub.open(0, other.path().to_str().unwrap(), false, s2);
+        thread::sleep(Duration::from_millis(300));
+        assert!(!hub.state.lock().polls.contains_key(&dir));
     }
 }

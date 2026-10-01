@@ -24,6 +24,7 @@ pub fn run() {
         cache_max_bytes: settings.cache_max_bytes(),
         cache_max_age_days: settings.cache_max_age_days(),
         force_network: std::env::var("MC_FORCE_NETWORK").is_ok_and(|v| v == "1"),
+        poll_interval: hub::POLL_INTERVAL,
     };
     let hub = hub::Hub::new(config).expect("failed to start filesystem watcher");
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());

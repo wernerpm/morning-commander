@@ -60,29 +60,67 @@ pub fn home_dir() -> String {
     home().to_string_lossy().into_owned()
 }
 
+/// Parent directories of `paths`, deduplicated.
+fn parents(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = paths
+        .iter()
+        .filter_map(|p| p.parent().map(PathBuf::from))
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs
+}
+
+// File operations end with `Hub::recheck` of the directories they changed: FSEvents may
+// not report changes on network volumes, so the panels would otherwise wait for a poll.
+
 #[tauri::command]
-pub async fn rename(dir: String, from: String, to: String) -> Result<(), String> {
+pub async fn rename(
+    hub: State<'_, Arc<Hub>>,
+    dir: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
     let dir = abs(&dir)?;
-    blocking(move || ops::rename(&dir, &from, &to)).await
+    let hub = hub.inner().clone();
+    blocking(move || {
+        let r = ops::rename(&dir, &from, &to);
+        hub.recheck(&[dir]);
+        r
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn mkdir(dir: String, name: String) -> Result<(), String> {
+pub async fn mkdir(hub: State<'_, Arc<Hub>>, dir: String, name: String) -> Result<(), String> {
     let dir = abs(&dir)?;
-    blocking(move || ops::mkdir(&dir, &name)).await
+    let hub = hub.inner().clone();
+    blocking(move || {
+        let r = ops::mkdir(&dir, &name);
+        hub.recheck(&[dir]);
+        r
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn trash(paths: Vec<String>) -> Result<(), String> {
+pub async fn trash(hub: State<'_, Arc<Hub>>, paths: Vec<String>) -> Result<(), String> {
     let paths = paths
         .iter()
         .map(|p| abs(p))
         .collect::<Result<Vec<_>, _>>()?;
-    blocking(move || ops::trash(&paths)).await
+    let hub = hub.inner().clone();
+    blocking(move || {
+        let r = ops::trash(&paths);
+        hub.recheck(&parents(&paths));
+        r
+    })
+    .await
 }
 
 #[tauri::command]
 pub fn copy_move(
+    hub: State<'_, Arc<Hub>>,
     ops: State<'_, Arc<Ops>>,
     kind: OpKind,
     sources: Vec<String>,
@@ -94,8 +132,15 @@ pub fn copy_move(
         .map(|p| abs(p))
         .collect::<Result<Vec<_>, _>>()?;
     let dest_dir = abs(&dest_dir)?;
+    let mut touched = parents(&sources);
+    touched.push(dest_dir.clone());
+    let hub = hub.inner().clone();
     let sink: OpSink = Arc::new(move |e| {
+        let finished = matches!(e, OpEvent::Done { .. } | OpEvent::Cancelled { .. });
         let _ = on_event.send(e);
+        if finished {
+            hub.recheck(&touched);
+        }
     });
     ops.start(kind, sources, dest_dir, sink)
 }
