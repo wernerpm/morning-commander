@@ -1,6 +1,6 @@
 # Step 10 — Media-specific viewers
 
-> Status: DONE (2026-09-30), except verification in the real app (`scripts/drive.mjs`, needs macOS). Frontend unit + e2e (mock backend) and Rust tests pass.
+> Status: DONE (2026-09-30), verified in the real app on macOS (2026-10-01). Frontend unit + e2e (mock backend) and Rust tests pass.
 
 ## Goals
 
@@ -126,7 +126,7 @@ interface Preferences {
 - [x] `F` toggles fullscreen in all three viewers; `Esc` leaves fullscreen first
 - [x] `⌘←`/`⌘→` move to the previous/next file of the same kind
 - [x] Photos: `←`/`→` skip non-photo files
-- [ ] Verified in the real app on macOS (video seek/volume, PDF scroll, fullscreen toggle)
+- [x] Verified in the real app on macOS (video seek/volume, PDF scroll, fullscreen toggle; focus is kept after leaving fullscreen)
 
 ## Open questions
 
