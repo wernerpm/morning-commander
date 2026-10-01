@@ -83,7 +83,8 @@ test.describe("with a clean backend", () => {
   test("network dir: NAS badge, and ↻ while a cached listing revalidates", async ({ page }) => {
     await page.evaluate(() => {
       (window as any).__mock.setNetwork("/Users/demo");
-      (window as any).__mock.revalidateMs = 800;
+      // Long enough that a slow CI runner still sees the marker between checks.
+      (window as any).__mock.revalidateMs = 2500;
     });
     const status = panel(page, 0).locator(".panel-status");
     await page.keyboard.type("doc", { delay: 30 });
@@ -93,20 +94,18 @@ test.describe("with a clean backend", () => {
     await expect(status.locator(".stale-marker")).toHaveCount(0); // first visit: read, not cached
     await page.keyboard.press("Backspace");
     await expect(panel(page, 0).locator(".panel-path")).toHaveText("/Users/demo");
-    const marker = status.locator(".stale-marker");
-    await expect(marker).toBeVisible();
-    await expect(marker).toHaveAttribute("title", "Refreshing…");
+    const marker = status.locator(".stale-marker[title='Refreshing…']");
     await expect(marker).toHaveCSS("opacity", "1"); // shown after the 150 ms delay
     await expect(status.locator(".nas-badge")).toHaveText("NAS");
-    await expect(marker).toHaveCount(0, { timeout: 3000 });
+    await expect(marker).toHaveCount(0, { timeout: 6000 });
     await expect(status.locator(".nas-badge")).toBeVisible();
   });
 
   test("⇧⌘R re-reads with refresh", async ({ page }) => {
-    await page.evaluate(() => ((window as any).__mock.revalidateMs = 800));
+    await page.evaluate(() => ((window as any).__mock.revalidateMs = 2500));
     await page.keyboard.press("Meta+Shift+r");
     await expect(panel(page, 0).locator(".stale-marker")).toBeVisible();
     await expect(panel(page, 0).locator(".nas-badge")).toHaveCount(0);
-    await expect(panel(page, 0).locator(".stale-marker")).toHaveCount(0, { timeout: 3000 });
+    await expect(panel(page, 0).locator(".stale-marker")).toHaveCount(0, { timeout: 6000 });
   });
 });
