@@ -1376,23 +1376,32 @@ mod tests {
             PanelEvent::Snapshot { entries, .. } => entries[0].size,
             other => panic!("expected snapshot, got {other:?}"),
         };
-        // Without refresh the mtime shortcut says "unchanged".
+        // FSEvents may still deliver the rewrite (it happened just before the watch
+        // started), so a watcher patch is allowed; what must not happen is a re-read.
+        let last_size = |events: &[PanelEvent]| {
+            events.iter().rev().find_map(|e| match e {
+                PanelEvent::Snapshot { entries, .. } => {
+                    entries.iter().find(|x| x.name == "f").map(|x| x.size)
+                }
+                PanelEvent::Patch { upserted, .. } => {
+                    upserted.iter().find(|x| x.name == "f").map(|x| x.size)
+                }
+                _ => None,
+            })
+        };
+        // Without refresh the mtime shortcut says "unchanged": no re-read.
         hub.open(0, dir.to_str().unwrap(), false, s.clone());
         wait_for(&log, "fresh", |ev| fresh_count(ev) == 1);
-        assert_eq!(size_of(&log.lock()[0]), 1);
-        assert_eq!(patch_count(&log.lock()), 0);
+        assert_eq!(size_of(&log.lock()[0]), 1, "served from the disk cache");
         assert_eq!(hub.revalidation_reads(), 0);
 
-        // With refresh: full re-read → patch with the new size → fresh.
+        // With refresh: a full re-read, ending with the new size, then fresh.
         let start = log.lock().len();
         hub.open(0, dir.to_str().unwrap(), true, s);
         assert!(snap(&log.lock()[start]).0);
         wait_for(&log, "second fresh", |ev| fresh_count(ev) == 2);
         let events = log.lock();
-        let patched = events[start..].iter().any(|e| {
-            matches!(e, PanelEvent::Patch { upserted, .. } if upserted.iter().any(|x| x.name == "f" && x.size == 6))
-        });
-        assert!(patched, "{events:#?}");
+        assert_eq!(last_size(&events[..]), Some(6), "{events:#?}");
         assert!(matches!(events.last(), Some(PanelEvent::Fresh { .. })));
         assert_eq!(hub.revalidation_reads(), 1);
     }
