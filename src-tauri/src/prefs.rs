@@ -220,6 +220,11 @@ impl Settings {
         positive_u64(&self.prefs.lock(), "cacheMaxBytes").unwrap_or(DEFAULT_CACHE_MAX_BYTES)
     }
 
+    pub fn media_read_ahead_bytes(&self) -> u64 {
+        positive_u64(&self.prefs.lock(), "mediaReadAheadBytes")
+            .unwrap_or(crate::media::DEFAULT_READ_AHEAD)
+    }
+
     pub fn cache_max_age_days(&self) -> u64 {
         positive_u64(&self.prefs.lock(), "cacheMaxAgeDays").unwrap_or(DEFAULT_CACHE_MAX_AGE_DAYS)
     }
@@ -240,6 +245,8 @@ fn with_defaults(mut prefs: Value) -> Value {
             .or_insert_with(|| DEFAULT_CACHE_MAX_BYTES.into());
         map.entry("cacheMaxAgeDays")
             .or_insert_with(|| DEFAULT_CACHE_MAX_AGE_DAYS.into());
+        map.entry("mediaReadAheadBytes")
+            .or_insert_with(|| crate::media::DEFAULT_READ_AHEAD.into());
     }
     prefs
 }

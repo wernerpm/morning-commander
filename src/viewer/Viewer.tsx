@@ -10,11 +10,11 @@ import {
   type JSX,
 } from "solid-js";
 import { backend } from "../ipc";
-import type { TextPreview } from "../ipc/types";
+import type { MediaStatus, TextPreview } from "../ipc/types";
 import { formatSize } from "./format";
 import ImageView from "./ImageView";
 import InfoCard from "./InfoCard";
-import { navGroup, stepInGroup, viewKind, type NavGroup, type ViewKind } from "./kind";
+import { extension, mediaEngine, navGroup, stepInGroup, viewKind, type NavGroup, type ViewKind } from "./kind";
 import { shellKey, type KeyHandler } from "./keys";
 import MediaView from "./MediaView";
 import PdfView from "./PdfView";
@@ -33,6 +33,7 @@ const TEXT_MAX = 5 * 1024 * 1024;
 // Re-focus the window and webview a few times while the animation settles.
 const REFOCUS_DELAYS_MS = [0, 300, 800];
 const SNIFF_MAX = 64 * 1024;
+const MEDIA_STATUS_MS = 1000;
 
 const GROUP_NOUN: Record<NavGroup, string> = {
   image: "photos",
@@ -44,6 +45,12 @@ const GROUP_NOUN: Record<NavGroup, string> = {
 
 function baseName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** Header text for a network file's read-ahead buffer. */
+export function bufferText(st: MediaStatus): string {
+  if (st.size > 0 && st.cached >= st.size) return "fully buffered";
+  return `${formatSize(st.ahead)} buffered`;
 }
 
 function clamp(i: number, len: number): number {
@@ -85,6 +92,29 @@ export default function Viewer(props: ViewerProps): JSX.Element {
     const t = text();
     return t && !("error" in t) ? t : undefined;
   };
+
+  // Video/audio (and .ts files that turn out to be MPEG-TS) play from media://.
+  // On network volumes Rust reads ahead into a spool: show how much is buffered,
+  // and drop the spool when the viewer leaves the file.
+  const playsMedia = () =>
+    kind() === "video" || kind() === "audio" || (extension(name()) === "ts" && !!preview()?.binary);
+  const [buffer, setBuffer] = createSignal("");
+  createEffect(() => {
+    const p = path();
+    if (!p || !playsMedia()) return;
+    const poll = () =>
+      backend.mediaStatus(p).then(
+        (st) => setBuffer(st.network ? bufferText(st) : ""),
+        () => {},
+      );
+    void poll();
+    const timer = window.setInterval(poll, MEDIA_STATUS_MS);
+    onCleanup(() => {
+      clearInterval(timer);
+      setBuffer("");
+      backend.mediaClose(p).catch((err) => console.warn("media close:", err));
+    });
+  });
 
   const [fullscreen, setFullscreenSignal] = createSignal(false);
   /** After leaving fullscreen: focus the window, then the element that had focus (or the viewer). */
@@ -220,6 +250,7 @@ export default function Viewer(props: ViewerProps): JSX.Element {
         <span class="viewer-meta">
           <Show when={preview()?.size !== undefined}>{formatSize(preview()!.size)} · </Show>
           <Show when={status()}>{status()} · </Show>
+          <Show when={buffer()}>{buffer()} · </Show>
           {position()}
         </span>
         <button class="viewer-close" onClick={close} aria-label="Close viewer">✕</button>
@@ -258,9 +289,10 @@ export default function Viewer(props: ViewerProps): JSX.Element {
 
               <Match when={kind() === "video" || kind() === "audio"}>
                 <MediaView
-                  url={backend.fileUrl(p)}
+                  url={backend.mediaUrl(p)}
                   name={name()}
                   video={kind() === "video"}
+                  engine={mediaEngine(name())}
                   register={register}
                   onError={onMediaError}
                 />
@@ -276,6 +308,17 @@ export default function Viewer(props: ViewerProps): JSX.Element {
                   detail={(text() as { error: string }).error}
                   name={name()}
                   onOpen={openDefault}
+                />
+              </Match>
+
+              <Match when={preview()?.binary && extension(name()) === "ts"}>
+                <MediaView
+                  url={backend.mediaUrl(p)}
+                  name={name()}
+                  video
+                  engine="libmedia"
+                  register={register}
+                  onError={onMediaError}
                 />
               </Match>
 

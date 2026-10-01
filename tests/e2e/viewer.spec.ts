@@ -120,6 +120,38 @@ test("video: focused on open, arrows seek, = changes and remembers the volume", 
   expect(await page.locator("video.viewer-video").evaluate((el: HTMLVideoElement) => el.volume)).toBeCloseTo(0.85);
 });
 
+test("mkv plays with libmedia: our controls, keys seek and change the volume", async ({ page }) => {
+  await openIn(page, "Downloads/Shows", "episode.mkv");
+  const player = page.locator(".viewer-libmedia");
+  const time = page.locator(".viewer-controls-time");
+  await expect(time).toHaveText(/\/ 0:06$/, { timeout: 10_000 }); // loaded: duration known
+  expect(await player.evaluate((el) => document.activeElement === el)).toBe(true);
+  await expect(page.locator(".viewer-libmedia canvas, .viewer-libmedia video")).not.toHaveCount(0);
+
+  await page.keyboard.press("Space");
+  await expect(page.locator(".viewer-controls-play")).toHaveAttribute("aria-label", "Play");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".viewer-overlay")).toContainText("+5 s");
+  await expect(time).toHaveText(/^0:0[45] \//);
+  await page.keyboard.press("ArrowLeft");
+  await expect(time).toHaveText(/^0:0[01] \//);
+
+  await page.keyboard.press("=");
+  await expect(page.locator(".viewer-overlay")).toContainText("Volume 85%");
+  await expect.poll(async () => (await mockState(page)).prefs.videoVolume).toBe(0.85);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".viewer")).toHaveCount(0);
+  const closed = () =>
+    page.evaluate(() => (window as unknown as { __mock: { mediaClosed: string[] } }).__mock.mediaClosed);
+  await expect.poll(closed).toContain("/Users/demo/Downloads/Shows/episode.mkv");
+});
+
+test("a file libmedia can't read shows the open-externally card", async ({ page }) => {
+  await openIn(page, "Downloads/Shows", "corrupt.mkv");
+  await expect(page.locator(".viewer-body")).toContainText("Can't play this format", { timeout: 10_000 });
+});
+
 test("photos: ←/→ skip files of other kinds", async ({ page }) => {
   await openIn(page, "Pictures", "cat.png");
   await expect(page.locator(".viewer-meta")).toContainText("2 / 3 photos");

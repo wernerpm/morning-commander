@@ -499,7 +499,7 @@ fn wipe(dirs: &Path) -> io::Result<()> {
 
 /// Exclude `dir` from Time Machine backups (as `tmutil addexclusion` does).
 #[cfg(target_os = "macos")]
-fn exclude_from_backup(dir: &Path) {
+pub(crate) fn exclude_from_backup(dir: &Path) {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
     let (Ok(path), Ok(name)) = (
@@ -529,7 +529,7 @@ fn exclude_from_backup(dir: &Path) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn exclude_from_backup(_dir: &Path) {}
+pub(crate) fn exclude_from_backup(_dir: &Path) {}
 
 #[cfg(test)]
 mod tests {

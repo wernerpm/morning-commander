@@ -59,6 +59,11 @@ function seed(): MockNode {
           "budget.csv": file(900, "a,b\n1,2\n"),
         }),
         Downloads: dir({
+          Shows: dir({
+            // Matroska with H.264 + AC-3: played by libmedia (step 12).
+            "episode.mkv": fixture("tiny.mkv", 56_597),
+            "corrupt.mkv": file(5_000),
+          }),
           "movie.mp4": fixture("tiny.mp4", 26_143),
           "clip.webm": fixture("tiny.webm", 29_139),
           "installer.dmg": file(80_000_000),
@@ -96,6 +101,7 @@ class MockFs {
   // Window fullscreen (the viewer's F key) and how often focusWindow was called.
   fullscreen = false;
   focusRequests = 0;
+  mediaClosed: string[] = [];
 
   // Stale-while-revalidate simulation. `cache` holds the listing last sent for
   // each directory; reopening a cached network dir (or any cached dir with
@@ -398,5 +404,15 @@ export const mockBackend: Backend = {
   },
   fileUrl(path) {
     return fs.lookup(path)?.url ?? `mock://${path}`;
+  },
+  mediaUrl(path) {
+    return this.fileUrl(path);
+  },
+  async mediaStatus(path) {
+    const size = fs.lookup(path)?.size ?? 0;
+    return { size, cached: 0, ahead: size, network: false };
+  },
+  async mediaClose(path) {
+    fs.mediaClosed.push(path);
   },
 };

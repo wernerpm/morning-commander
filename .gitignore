@@ -37,3 +37,6 @@ playwright-report/
 
 # Claude Code local state (agent worktrees)
 .claude/
+
+# libmedia wasm decoders (scripts/fetch-libmedia.mjs)
+public/libmedia/

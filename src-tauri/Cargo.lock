@@ -2370,6 +2370,7 @@ dependencies = [
  "notify",
  "notify-debouncer-full",
  "parking_lot",
+ "percent-encoding",
  "rayon",
  "serde",
  "serde_json",

@@ -11,6 +11,7 @@ use tauri::ipc::Channel;
 
 use crate::hub::{Hub, PanelSink};
 use crate::listing::{expand_tilde, home_dir as home};
+use crate::media::{Media, MediaStatus};
 use crate::model::{ConflictChoice, OpEvent, OpKind, PanelEvent, TextPreview, VolumeInfo};
 use crate::ops::{self, OpSink, Ops};
 use crate::prefs::Settings;
@@ -211,4 +212,20 @@ pub fn state_set(
     patch: serde_json::Value,
 ) -> Result<(), String> {
     settings.state_set(&patch)
+}
+
+#[tauri::command]
+pub async fn media_status(
+    media: State<'_, Arc<Media>>,
+    path: String,
+) -> Result<MediaStatus, String> {
+    let media = media.inner().clone();
+    let path = abs(&path)?;
+    blocking(move || media.status(&path)).await
+}
+
+#[tauri::command]
+pub fn media_close(media: State<'_, Arc<Media>>, path: String) -> Result<(), String> {
+    media.close_path(&abs(&path)?);
+    Ok(())
 }

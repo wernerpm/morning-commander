@@ -48,6 +48,13 @@ type OpEvent =
 type ConflictChoice = "overwrite" | "skip" | "keepBoth" | "cancel";
 
 interface TextPreview { text: string; truncated: boolean; binary: boolean; size: number }
+
+interface MediaStatus {
+  size: number;     // bytes
+  cached: number;   // bytes held in the read-ahead spool (0 for local files)
+  ahead: number;    // bytes available contiguously from the latest requested position (all of it for local files)
+  network: boolean; // read through the spool
+}
 ```
 
 - `snapshot.path` is the canonical absolute path actually shown. It can differ from what was requested (symlinks resolved, `~` expanded, or a fallback to the nearest existing ancestor when the directory vanished).
@@ -80,6 +87,7 @@ interface Preferences {          // preferences.json: settings, rarely written
   videoVolume: number;           // 0..1, default 0.8 (step 10)
   cacheMaxBytes: number;         // default 104857600 (100 MiB); listing cache limit
   cacheMaxAgeDays: number;       // default 180; unvisited longer → evicted
+  mediaReadAheadBytes: number;   // default 1073741824 (1 GiB); NAS video read-ahead (step 12), read at startup
   [key: string]: unknown;        // unknown fields are preserved
 }
 
@@ -121,12 +129,18 @@ interface AppState {             // state.json: session state, written often
 | `prefs_set` | `patch: object` | `Preferences` | JSON merge patch; written immediately; returns the result |
 | `state_get` | — | `AppState` | |
 | `state_set` | `patch: object` | `void` | JSON merge patch; debounced write |
+| `media_status` | `path: string` | `MediaStatus` | Read-ahead state of a file played from `media://`; the viewer polls it ~1 s while a network file is open |
+| `media_close` | `path: string` | `void` | Stop read-ahead and delete the spool, if it is for `path` (so closing one file can't stop the next one's spool) |
 
 Errors are returned as rejected promises with a human-readable string.
 
 ## Viewer file access
 
-Media is loaded with `convertFileSrc(path)` (`asset://localhost/<percent-encoded path>`). The asset protocol is enabled in `tauri.conf.json` with scope `$HOME/**`, `/Volumes/**`, `/tmp/**`, `/private/**`, and the CSP allows `asset:` and `http://asset.localhost` in `img-src`, `media-src` and `connect-src` (PDFs are `fetch`ed and rendered with PDF.js; its worker is bundled, `worker-src 'self' blob:`).
+Images and PDFs are loaded with `convertFileSrc(path)` (`asset://localhost/<percent-encoded path>`). Note that the asset protocol answers at most ~1000 KiB per range request.
+
+**Video and audio** use the app's own scheme, `convertFileSrc(path, "media")` → `media://localhost/<percent-encoded path>` (`src-tauri/src/media.rs`, step 12): `206` range responses of at most 4 MiB with `Content-Range`/`Accept-Ranges`, CORS headers (`*`, `Range` allowed, `Content-Range`/`Content-Length` exposed) so `fetch` can read it, `OPTIONS`/`HEAD` supported. Local files are read directly; files on network volumes (or all files with `MC_FORCE_NETWORK=1`) go through a read-ahead spool in `~/.morning-commander/media/` (one file at a time, deleted by `media_close`, on exit and at startup). The native `<video>` loads the URL directly; the libmedia player `fetch`es it with `Range` headers (`src/viewer/rangeLoader.ts`).
+
+The asset protocol is enabled in `tauri.conf.json` with scope `$HOME/**`, `/Volumes/**`, `/tmp/**`, `/private/**`, and the CSP allows `asset:` and `http://asset.localhost` in `img-src`, `media-src` and `connect-src`, `media:`/`http://media.localhost` in `media-src` and `connect-src`, and `'wasm-unsafe-eval' blob:` in `script-src` for libmedia (WASM decoders; its AudioWorklet module is a `blob:`). `connect-src` includes `'self'` so libmedia can `fetch` its WASM from the bundled app (`tauri://localhost`); this is only enforced in the bundled app, not under `pnpm tauri dev`, so check CSP changes with a bundle (`pnpm tauri build --debug --features webdriver --bundles app`). (PDFs are `fetch`ed and rendered with PDF.js; its worker is bundled, `worker-src 'self' blob:`).
 
 ## Window
 
@@ -134,4 +148,4 @@ The viewer's fullscreen (`F`) is **window** fullscreen via `@tauri-apps/api/wind
 
 ## Browser mock
 
-`src/ipc/mock.ts` implements the same commands against an in-memory tree when `window.__TAURI_INTERNALS__` is absent. `pnpm dev` in a normal browser and the Playwright tests use it. Preferences, state and the fullscreen flag live in memory (`window.__mock.prefs`, `.state`, `.fullscreen`) and reset on reload. A few mock files are backed by real fixtures served by Vite from `tests/fixtures/` (`Documents/report.pdf`, `Downloads/clip.webm`, `Downloads/movie.mp4`, `Pictures/beach.jpg`, `Pictures/cat.png`, `Pictures/holiday.mp4`); other media URLs are `mock://…` and don't load.
+`src/ipc/mock.ts` implements the same commands against an in-memory tree when `window.__TAURI_INTERNALS__` is absent. `pnpm dev` in a normal browser and the Playwright tests use it. Preferences, state and the fullscreen flag live in memory (`window.__mock.prefs`, `.state`, `.fullscreen`) and reset on reload. A few mock files are backed by real fixtures served by Vite from `tests/fixtures/` (`Documents/report.pdf`, `Downloads/clip.webm`, `Downloads/movie.mp4`, `Pictures/beach.jpg`, `Pictures/cat.png`, `Pictures/holiday.mp4`, `Downloads/Shows/episode.mkv`); other media URLs are `mock://…` and don't load (`Downloads/Shows/corrupt.mkv` exercises the libmedia error path). `mediaUrl` returns the same URL as `fileUrl`; `mediaStatus` reports a local file; `mediaClose` records paths in `window.__mock.mediaClosed`.

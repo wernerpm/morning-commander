@@ -54,6 +54,17 @@ export interface VolumeInfo {
   total: number;
 }
 
+/** Read-ahead state of a file played from `media://` (see docs/ipc.md). */
+export interface MediaStatus {
+  size: number;
+  /** Bytes held in the spool (0 for local files). */
+  cached: number;
+  /** Bytes available contiguously from the playhead (everything, for local files). */
+  ahead: number;
+  /** Played through the network spool. */
+  network: boolean;
+}
+
 export interface Bookmark {
   name: string;
   path: string;

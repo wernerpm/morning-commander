@@ -5,8 +5,15 @@ export type ViewKind = "image" | "pdf" | "video" | "audio" | "text" | "other";
 const IMAGE = new Set([
   "png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "heif", "bmp", "tif", "tiff", "svg", "ico",
 ]);
-const VIDEO = new Set(["mp4", "m4v", "mov", "webm"]);
-const AUDIO = new Set(["mp3", "m4a", "aac", "wav", "flac", "aiff", "ogg"]);
+// WebKit's own player (AVFoundation) handles these containers.
+const NATIVE_VIDEO = new Set(["mp4", "m4v", "mov", "webm"]);
+const NATIVE_AUDIO = new Set(["mp3", "m4a", "aac", "wav", "flac", "aiff", "ogg"]);
+// libmedia (WASM/WebCodecs) handles these; see step-12. No .wmv/.asf: libmedia has no ASF demuxer.
+// ".ts" is TypeScript first: the viewer plays it as MPEG-TS only when it sniffs as binary.
+const LIBMEDIA_VIDEO = new Set([
+  "mkv", "avi", "m2ts", "mts", "mpg", "mpeg", "vob", "flv", "ogv", "3gp", "divx", "f4v",
+]);
+const LIBMEDIA_AUDIO = new Set(["opus", "ac3", "dts", "mka", "oga", "mp2"]);
 const TEXT = new Set([
   "txt", "md", "markdown", "json", "jsonc", "toml", "yaml", "yml",
   "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "css", "scss", "html", "htm", "xml",
@@ -32,10 +39,21 @@ export function viewKind(name: string): ViewKind {
   const ext = extension(base);
   if (IMAGE.has(ext)) return "image";
   if (ext === "pdf") return "pdf";
-  if (VIDEO.has(ext)) return "video";
-  if (AUDIO.has(ext)) return "audio";
+  if (NATIVE_VIDEO.has(ext) || LIBMEDIA_VIDEO.has(ext)) return "video";
+  if (NATIVE_AUDIO.has(ext) || LIBMEDIA_AUDIO.has(ext)) return "audio";
   if (TEXT.has(ext)) return "text";
   return "other";
+}
+
+/**
+ * Which player a video/audio file starts with. "native" (the <video> element) falls
+ * back to "libmedia" when WebKit can't decode the file (e.g. an MP4 with AC-3 audio).
+ */
+export type MediaEngine = "native" | "libmedia";
+
+export function mediaEngine(name: string): MediaEngine {
+  const ext = extension(name.slice(name.lastIndexOf("/") + 1));
+  return NATIVE_VIDEO.has(ext) || NATIVE_AUDIO.has(ext) ? "native" : "libmedia";
 }
 
 /**

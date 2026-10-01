@@ -9,11 +9,13 @@ pnpm install
 pnpm tauri build
 ```
 
+`pnpm build` (run by `tauri build`) first runs `scripts/fetch-libmedia.mjs`, which copies the libmedia video player into `public/libmedia/` and **downloads its WASM decoders from jsDelivr** (pinned, checksummed, ~15 MB; skipped when already present). The first build therefore needs network access. libmedia is LGPL-3.0: its files ship unmodified as separate files with `COPYING.LGPLv3` next to them.
+
 Output:
 
 | File | What |
 |---|---|
-| `src-tauri/target/release/bundle/macos/Morning Commander.app` | The app (≈ 6 MB) |
+| `src-tauri/target/release/bundle/macos/Morning Commander.app` | The app (≈ 6 MB + ≈ 17 MB libmedia player and decoders) |
 | `src-tauri/target/release/bundle/dmg/Morning Commander_<version>_aarch64.dmg` | Drag-to-Applications disk image |
 
 The build is **Apple Silicon only** (the host architecture). For an Intel or universal build you need rustup (Homebrew's Rust can't add targets):

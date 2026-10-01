@@ -52,7 +52,9 @@ node scripts/drive.mjs key:Backspace wait:800 key:Enter wait:1500 "eval:return w
 
 Reference numbers (M-series Mac, dev build with opt-level 1): 100k files cached → ipc ≈ 50 ms, apply ≈ 70 ms.
 
-The real app reads settings from `~/.morning-commander/` (`MC_HOME=<dir>` points it elsewhere, e.g. a scratch dir for a clean first launch). `MC_FORCE_NETWORK=1` makes every directory behave like a network one (stale snapshots, mtime revalidation, polling) without a NAS: `MC_FORCE_NETWORK=1 pnpm tauri dev --features webdriver`. In dev builds `window.__mcTiming` entries include `stale`.
+The real app reads settings from `~/.morning-commander/` (`MC_HOME=<dir>` points it elsewhere, e.g. a scratch dir for a clean first launch). `MC_FORCE_NETWORK=1` makes every directory behave like a network one (stale snapshots, mtime revalidation, polling) without a NAS: `MC_FORCE_NETWORK=1 pnpm tauri dev --features webdriver`. In dev builds `window.__mcTiming` entries include `stale`. It also sends video/audio through the NAS read-ahead spool (`~/.morning-commander/media/`), so the viewer header shows "… buffered" for local files.
+
+Video (step 12): in dev builds the libmedia player of the open MKV/AVI/… is `window.__mcLibmedia` (`getStatus()`, `currentTime` in ms, `on("firstVideoRendered", …)`). Test clips can be generated with `ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440 -t 60 -c:v libx264 -pix_fmt yuv420p -c:a ac3 clip.mkv` (swap codecs/containers as needed). Reference numbers (M-series Mac, dev build): first frame of a 20 Mbit/s H.264/AC-3 MKV ≈ 0.4 s local, ≈ 1.2 s from the NAS (≈ 0.6 s with a warm SMB cache); NAS read-ahead ≈ 9 MB/s.
 
 A good smoke test after backend changes:
 

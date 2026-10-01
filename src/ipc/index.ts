@@ -7,6 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppState,
   ConflictChoice,
+  MediaStatus,
   MergePatch,
   OpEvent,
   OpKind,
@@ -44,6 +45,11 @@ export interface Backend {
   /** Make the window key and the webview first responder (after leaving fullscreen). */
   focusWindow(): Promise<void>;
   fileUrl(path: string): string;
+  /** URL for video/audio: range requests with read-ahead on network volumes. */
+  mediaUrl(path: string): string;
+  mediaStatus(path: string): Promise<MediaStatus>;
+  /** Stop read-ahead for `path` and drop its spool. */
+  mediaClose(path: string): Promise<void>;
 }
 
 const tauriBackend: Backend = {
@@ -77,6 +83,9 @@ const tauriBackend: Backend = {
     await getCurrentWebview().setFocus();
   },
   fileUrl: (path) => convertFileSrc(path),
+  mediaUrl: (path) => convertFileSrc(path, "media"),
+  mediaStatus: (path) => invoke<MediaStatus>("media_status", { path }),
+  mediaClose: (path) => invoke("media_close", { path }),
 };
 
 export const backend: Backend = inTauri ? tauriBackend : mockBackend;

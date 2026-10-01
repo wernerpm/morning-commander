@@ -21,17 +21,22 @@ pub fn read_text(path: &Path, max_bytes: u64) -> Result<TextPreview, String> {
     let size = meta.len();
     let limit = max_bytes.min(MAX_BYTES);
     let mut buf = Vec::with_capacity(limit.min(size) as usize);
-    file.take(limit).read_to_end(&mut buf).map_err(err)?;
-    let truncated = size > buf.len() as u64;
-
-    if is_binary(&buf[..buf.len().min(SNIFF)]) {
+    let mut file = file.take(limit);
+    // Sniff first, so a large binary file (a video on the NAS) costs one small read.
+    (&mut file)
+        .take(SNIFF as u64)
+        .read_to_end(&mut buf)
+        .map_err(err)?;
+    if is_binary(&buf) {
         return Ok(TextPreview {
             text: String::new(),
-            truncated,
+            truncated: size > buf.len() as u64,
             binary: true,
             size,
         });
     }
+    file.read_to_end(&mut buf).map_err(err)?;
+    let truncated = size > buf.len() as u64;
     let text = match String::from_utf8(buf) {
         Ok(s) => s,
         Err(e) => {
