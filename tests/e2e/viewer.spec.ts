@@ -58,8 +58,10 @@ async function openIn(page: Page, dir: string, file: string) {
 
 const mockState = (page: Page) =>
   page.evaluate(() => {
-    const m = (window as unknown as { __mock: { prefs: Record<string, unknown>; fullscreen: boolean } }).__mock;
-    return { prefs: m.prefs, fullscreen: m.fullscreen };
+    const m = (window as unknown as {
+      __mock: { prefs: Record<string, unknown>; fullscreen: boolean; focusRequests: number };
+    }).__mock;
+    return { prefs: m.prefs, fullscreen: m.fullscreen, focusRequests: m.focusRequests };
   });
 
 test("PDF renders with PDF.js, has focus without a click, and arrows scroll instead of changing file", async ({ page }) => {
@@ -142,4 +144,41 @@ test("F toggles fullscreen; Esc leaves fullscreen first, then closes", async ({ 
   await page.keyboard.press("F3"); // closing while fullscreen leaves fullscreen too
   await expect(viewer).toHaveCount(0);
   expect((await mockState(page)).fullscreen).toBe(false);
+});
+
+async function leaveFullscreenKeepsFocus(page: Page, focused: string) {
+  const el = page.locator(focused);
+  await expect.poll(() => el.evaluate((e) => document.activeElement === e)).toBe(true);
+  for (const leave of ["Escape", "f"]) {
+    const before = (await mockState(page)).focusRequests;
+    await page.keyboard.press("f");
+    await expect(page.locator(".viewer")).toHaveClass(/fullscreen/);
+    await page.keyboard.press(leave);
+    await expect(page.locator(".viewer")).not.toHaveClass(/fullscreen/);
+    await expect.poll(async () => (await mockState(page)).focusRequests).toBeGreaterThan(before);
+    expect(await el.evaluate((e) => document.activeElement === e)).toBe(true);
+  }
+}
+
+test("leaving fullscreen re-focuses the window: video", async ({ page }) => {
+  await openIn(page, "Downloads", "clip.webm");
+  await leaveFullscreenKeepsFocus(page, "video.viewer-video");
+  await page.keyboard.press("-"); // keys still reach the player
+  await expect(page.locator(".viewer-overlay")).toContainText("Volume 75%");
+});
+
+test("leaving fullscreen re-focuses the window: PDF", async ({ page }) => {
+  await openIn(page, "Documents", "report.pdf");
+  await expect(page.locator(".viewer-pdf-page canvas").first()).toBeVisible();
+  await leaveFullscreenKeepsFocus(page, ".viewer-pdf");
+  await page.keyboard.press("End"); // keys still scroll the document
+  await expect(page.locator(".viewer-meta")).toContainText("p. 6 / 6");
+});
+
+test("leaving fullscreen re-focuses the window: photo", async ({ page }) => {
+  await openIn(page, "Pictures", "beach.jpg");
+  await expect(page.locator(".viewer-image img")).toBeVisible();
+  await leaveFullscreenKeepsFocus(page, ".viewer-image");
+  await page.keyboard.press("ArrowRight"); // keys still change photo
+  await expect(page.locator(".viewer-name")).toHaveText("cat.png");
 });

@@ -18,7 +18,7 @@ window.__mock.touch("/Users/demo/new.txt", 10);
 window.__mock.remove("/Users/demo/alpha.txt");
 ```
 
-Most media URLs from the mock (`mock://…`) don't load. The exceptions are backed by files in `tests/fixtures/` (a 6-page PDF, a 3-second WebM and MP4), so PDF.js rendering and the video keys are covered by e2e tests; images still need the real app. Open-source Chromium can't decode H.264, so e2e tests use the WebM for anything that needs playback.
+Most media URLs from the mock (`mock://…`) don't load. The exceptions are backed by files in `tests/fixtures/` (a 6-page PDF, a 3-second WebM and MP4, a small JPEG and PNG), so the photo, PDF.js and video views are covered by e2e tests. Open-source Chromium can't decode H.264, so e2e tests use the WebM for anything that needs playback.
 
 ## Driving the real app
 

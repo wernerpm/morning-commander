@@ -65,8 +65,8 @@ function seed(): MockNode {
           "archive.zip": file(3_000_000),
         }),
         Pictures: dir({
-          "beach.jpg": file(2_000_000),
-          "cat.png": file(500_000),
+          "beach.jpg": fixture("tiny.jpg", 9059),
+          "cat.png": fixture("tiny.png", 2687),
           "holiday.mp4": fixture("tiny.mp4", 26_143),
           "Sunset.heic": file(1_500_000),
         }),
@@ -93,8 +93,9 @@ class MockFs {
   // preferences.json / state.json contents (only what was set, like the files).
   prefs: Record<string, unknown> = {};
   state: AppState = {};
-  // Window fullscreen (the viewer's F key).
+  // Window fullscreen (the viewer's F key) and how often focusWindow was called.
   fullscreen = false;
+  focusRequests = 0;
 
   // Stale-while-revalidate simulation. `cache` holds the listing last sent for
   // each directory; reopening a cached network dir (or any cached dir with
@@ -391,6 +392,9 @@ export const mockBackend: Backend = {
   },
   async isFullscreen() {
     return fs.fullscreen;
+  },
+  async focusWindow() {
+    fs.focusRequests++;
   },
   fileUrl(path) {
     return fs.lookup(path)?.url ?? `mock://${path}`;

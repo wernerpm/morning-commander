@@ -28,6 +28,10 @@ export interface ViewerProps {
 }
 
 const TEXT_MAX = 5 * 1024 * 1024;
+// Leaving macOS fullscreen is an animated Space switch, after which the webview
+// is no longer first responder: keys go nowhere, even after ⌘Tab, until a click.
+// Re-focus the window and webview a few times while the animation settles.
+const REFOCUS_DELAYS_MS = [0, 300, 800];
 const SNIFF_MAX = 64 * 1024;
 
 const GROUP_NOUN: Record<NavGroup, string> = {
@@ -83,12 +87,32 @@ export default function Viewer(props: ViewerProps): JSX.Element {
   };
 
   const [fullscreen, setFullscreenSignal] = createSignal(false);
+  /** After leaving fullscreen: focus the window, then the element that had focus (or the viewer). */
+  const restoreFocus = () => {
+    const target = document.activeElement;
+    for (const ms of REFOCUS_DELAYS_MS) {
+      window.setTimeout(() => {
+        backend.focusWindow().catch((err) => console.warn("focus:", err));
+        if (!root.isConnected) return; // viewer closed: the panels take focus
+        const el = target instanceof HTMLElement && root.contains(target) ? target : root;
+        if (document.activeElement !== el) el.focus();
+      }, ms);
+    }
+  };
   const setFullscreen = (on: boolean) => {
     setFullscreenSignal(on);
-    backend.setFullscreen(on).catch((err) => console.warn("fullscreen:", err));
+    backend.setFullscreen(on).then(
+      () => !on && restoreFocus(),
+      (err) => console.warn("fullscreen:", err),
+    );
   };
   // The window can also leave fullscreen without us (green button, Mission Control).
-  const syncFullscreen = () => void backend.isFullscreen().then(setFullscreenSignal, () => {});
+  const syncFullscreen = () =>
+    void backend.isFullscreen().then((on) => {
+      const left = fullscreen() && !on;
+      setFullscreenSignal(on);
+      if (left) restoreFocus();
+    }, () => {});
 
   let root!: HTMLDivElement;
 
