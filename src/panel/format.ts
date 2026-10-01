@@ -14,10 +14,16 @@ export function formatSize(bytes: number): string {
   return `${v < 100 ? v.toFixed(1) : Math.round(v)}${UNITS[u]}`;
 }
 
+/** Footer form: "512 B", "7.0 KB", "2.0 TB". */
 export function formatBytesLong(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
-  const s = formatSize(bytes);
-  return s.replace(/([KMGT])$/, " $1B");
+  let v = bytes;
+  let u = 0;
+  while (v >= 1024 && u < UNITS.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${v < 100 ? v.toFixed(1) : Math.round(v)} ${UNITS[u]}B`;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
