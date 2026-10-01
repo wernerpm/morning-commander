@@ -181,6 +181,16 @@ export default function Panel(props: Props) {
           </span>
         </Show>
         <span class="sort-indicator">
+          <Show when={props.panel.stale()}>
+            <span class="stale-marker" title="Refreshing…">
+              ↻
+            </span>
+          </Show>
+          <Show when={props.panel.network()}>
+            <span class="nas-badge" title="Network volume">
+              NAS
+            </span>
+          </Show>
           <Show when={props.panel.freeSpace() !== null}>{formatBytesLong(props.panel.freeSpace()!)} free · </Show>
           {props.panel.sort().key}
           {props.panel.sort().desc ? "↓" : "↑"}

@@ -1,26 +1,19 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { Bookmark } from "../ipc/types";
 import { fold } from "../panel/jump";
-import { prefs, updatePrefs } from "./settings";
 
 export type { Bookmark };
 
-/** Saved bookmarks, or the defaults when none were ever saved. */
-export function loadBookmarks(home: string): Bookmark[] {
-  return (
-    prefs().bookmarks ?? [
-      { name: "Home", path: home },
-      { name: "Desktop", path: `${home}/Desktop` },
-      { name: "Documents", path: `${home}/Documents` },
-      { name: "Downloads", path: `${home}/Downloads` },
-      { name: "Applications", path: "/Applications" },
-      { name: "Volumes", path: "/Volumes" },
-    ]
-  );
-}
-
-export function saveBookmarks(list: Bookmark[]) {
-  void updatePrefs({ bookmarks: list });
+/** Shown until the user changes the list (then `prefs.bookmarks` holds it). */
+export function defaultBookmarks(home: string): Bookmark[] {
+  return [
+    { name: "Home", path: home },
+    { name: "Desktop", path: `${home}/Desktop` },
+    { name: "Documents", path: `${home}/Documents` },
+    { name: "Downloads", path: `${home}/Downloads` },
+    { name: "Applications", path: "/Applications" },
+    { name: "Volumes", path: "/Volumes" },
+  ];
 }
 
 interface Props {

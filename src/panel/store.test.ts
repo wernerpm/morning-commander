@@ -1,14 +1,31 @@
 import { createRoot } from "solid-js";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetSettings } from "../app/settings";
+import { backend } from "../ipc";
 import { createPanel } from "./store";
 
 const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+
+interface Mock {
+  touch(p: string, size?: number): void;
+  remove(p: string): void;
+  setNetwork(prefix: string | null): void;
+  clearCache(): void;
+  resetSettings(): void;
+  revalidateMs: number;
+  state: { panels?: Record<string, { path: string; showHidden: boolean }> };
+}
+const mock = () => (window as unknown as { __mock: Mock }).__mock;
 
 function withPanel(fn: (p: ReturnType<typeof createPanel>) => Promise<void>) {
   return new Promise<void>((resolve, reject) =>
     createRoot(async (dispose) => {
       try {
-        localStorage.clear();
+        resetSettings();
+        mock().resetSettings();
+        mock().setNetwork(null);
+        mock().clearCache();
+        mock().revalidateMs = 30;
         await fn(createPanel(0));
         resolve();
       } catch (e) {
@@ -21,6 +38,8 @@ function withPanel(fn: (p: ReturnType<typeof createPanel>) => Promise<void>) {
 }
 
 const names = (p: ReturnType<typeof createPanel>) => p.rows().map((e) => e.name);
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("panel store (mock backend)", () => {
   it("opens a directory with a parent row, dirs first, hidden files filtered", () =>
@@ -47,12 +66,11 @@ describe("panel store (mock backend)", () => {
     withPanel(async (p) => {
       await p.open("/Users/demo");
       p.focusName("readme.txt");
-      const mock = (window as unknown as { __mock: { touch(p: string): void; remove(p: string): void } }).__mock;
-      mock.touch("/Users/demo/aaa.txt");
+      mock().touch("/Users/demo/aaa.txt");
       await tick();
       expect(names(p)).toContain("aaa.txt");
       expect(p.current()?.name).toBe("readme.txt");
-      mock.remove("/Users/demo/readme.txt");
+      mock().remove("/Users/demo/readme.txt");
       await tick();
       expect(names(p)).not.toContain("readme.txt");
       expect(p.current()).toBeDefined();
@@ -66,5 +84,63 @@ describe("panel store (mock backend)", () => {
       p.toggleSelect("budget.csv");
       p.toggleSelect("report.pdf");
       expect(p.targets().map((e) => e.name)).toEqual(["budget.csv", "report.pdf"]);
+    }));
+
+  it("persists path, sort and hidden flag to state", () =>
+    withPanel(async (p) => {
+      await p.open("/Users/demo/Music");
+      p.toggleHidden();
+      expect(mock().state.panels?.["0"]).toEqual({ path: "/Users/demo/Music", sort: { key: "name", desc: false }, showHidden: true });
+    }));
+
+  it("a stale snapshot of a network dir is patched, then cleared by fresh", () =>
+    withPanel(async (p) => {
+      mock().setNetwork("/Users/demo");
+      await p.open("/Users/demo");
+      expect(p.network()).toBe(true);
+      expect(p.stale()).toBe(false); // not cached yet: read before the snapshot
+      await p.open("/Users/demo/Documents");
+      mock().touch("/Users/demo/while-away.txt"); // nobody watches /Users/demo now
+      await tick();
+      await p.open("/Users/demo");
+      expect(p.stale()).toBe(true);
+      expect(names(p)).not.toContain("while-away.txt");
+      await tick();
+      expect(p.stale()).toBe(false);
+      expect(names(p)).toContain("while-away.txt");
+    }));
+
+  it("local dirs are not network and not stale on reopen", () =>
+    withPanel(async (p) => {
+      await p.open("/Users/demo");
+      await p.open("/Users/demo/Documents");
+      await p.open("/Users/demo");
+      expect(p.network()).toBe(false);
+      expect(p.stale()).toBe(false);
+    }));
+
+  it("reload passes refresh to panel_open; navigation doesn't", () =>
+    withPanel(async (p) => {
+      const spy = vi.spyOn(backend, "panelOpen");
+      await p.open("/Users/demo");
+      expect(spy.mock.lastCall?.[3]).toBe(false);
+      await p.reload();
+      expect(spy.mock.lastCall?.[1]).toBe("/Users/demo");
+      expect(spy.mock.lastCall?.[3]).toBe(true);
+      expect(p.stale()).toBe(true); // cached listing, revalidating
+      await tick();
+      expect(p.stale()).toBe(false);
+    }));
+
+  it("ignores fresh for a path the panel has left", () =>
+    withPanel(async (p) => {
+      mock().revalidateMs = 40;
+      await p.open("/Users/demo");
+      void p.reload();
+      await tick(10);
+      await p.open("/Users/demo/Documents");
+      await tick();
+      expect(p.path()).toBe("/Users/demo/Documents");
+      expect(p.stale()).toBe(false);
     }));
 });

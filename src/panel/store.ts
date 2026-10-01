@@ -2,9 +2,9 @@
 // sorting, hidden-file filtering, cursor and selection live here.
 
 import { batch, createMemo, createSignal } from "solid-js";
+import { panelState, savePanelState } from "../app/settings";
 import { backend, joinPath } from "../ipc";
-import { isNavigable, type Entry, type PanelEvent, type PanelId, type PanelState } from "../ipc/types";
-import { appState, updateState } from "../app/settings";
+import { isNavigable, type Entry, type PanelEvent, type PanelId } from "../ipc/types";
 import { comparator, insertionIndex, sortEntries, type SortSpec } from "./sort";
 
 export const PARENT: Entry = {
@@ -16,10 +16,6 @@ export const PARENT: Entry = {
   hidden: false,
 };
 
-function loadPersisted(id: PanelId): Partial<PanelState> {
-  return appState().panels?.[String(id) as "0" | "1"] ?? {};
-}
-
 export function basename(path: string): string {
   if (path === "/") return "/";
   return path.slice(path.lastIndexOf("/") + 1);
@@ -28,14 +24,18 @@ export function basename(path: string): string {
 export type Panel = ReturnType<typeof createPanel>;
 
 export function createPanel(id: PanelId) {
-  const saved = loadPersisted(id);
+  const saved = panelState(id);
   const [path, setPath] = createSignal<string>("");
   const [parent, setParent] = createSignal<string | null>(null);
   // Sorted, filtered entries without the ".." row. Replaced (not mutated) on change.
   const [sorted, setSorted] = createSignal<Entry[]>([]);
   const [all, setAll] = createSignal<Map<string, Entry>>(new Map());
-  const [sort, setSortSignal] = createSignal<SortSpec>(saved.sort ?? { key: "name", desc: false });
-  const [showHidden, setShowHidden] = createSignal<boolean>(saved.showHidden ?? false);
+  const [sort, setSortSignal] = createSignal<SortSpec>(saved?.sort ?? { key: "name", desc: false });
+  const [showHidden, setShowHidden] = createSignal<boolean>(saved?.showHidden ?? false);
+  // Listing came from a cache and is being revalidated (cleared by `fresh`).
+  const [stale, setStale] = createSignal(false);
+  // Directory is on a network volume.
+  const [network, setNetwork] = createSignal(false);
   const [cursor, setCursor] = createSignal(0);
   const [selected, setSelected] = createSignal<Set<string>>(new Set());
   const [error, setError] = createSignal<string | null>(null);
@@ -59,8 +59,7 @@ export function createPanel(id: PanelId) {
   const visible = (e: Entry) => showHidden() || !e.hidden;
 
   function persist() {
-    const p: PanelState = { path: path(), sort: sort(), showHidden: showHidden() };
-    updateState({ panels: { [String(id)]: p } });
+    if (path()) savePanelState(id, { path: path(), sort: sort(), showHidden: showHidden() });
   }
 
   function resort(keepName?: string) {
@@ -96,6 +95,8 @@ export function createPanel(id: PanelId) {
       setAll(map);
       setError(null);
       setLoading(false);
+      setStale(e.stale);
+      setNetwork(e.network);
       if (!samePath) {
         setSelected(new Set<string>());
         setCursor(0);
@@ -146,31 +147,46 @@ export function createPanel(id: PanelId) {
     });
   }
 
-  async function open(target: string, focus?: string, fromHistory = false) {
+  /** `refresh` (⇧⌘R) asks Rust for a full re-read even if the cached listing looks current. */
+  async function open(target: string, focus?: string, fromHistory = false, refresh = false) {
     const token = ++generation;
     const t0 = performance.now();
     historyNav = fromHistory;
     pendingFocus = focus ?? null;
     setLoading(true);
     try {
-      await backend.panelOpen(id, target, (ev) => {
-        if (token !== generation) return;
-        if (ev.type === "snapshot") {
-          const t1 = performance.now();
-          applySnapshot(ev);
-          if (import.meta.env.DEV) {
-            // Dev-only timing, read by scripts/drive.mjs perf checks.
-            const w = window as unknown as { __mcTiming?: object[] };
-            (w.__mcTiming ??= []).push({ path: ev.path, n: ev.entries.length, ipc: Math.round(t1 - t0), apply: Math.round(performance.now() - t1) });
+      await backend.panelOpen(
+        id,
+        target,
+        (ev) => {
+          if (token !== generation) return;
+          if (ev.type === "snapshot") {
+            const t1 = performance.now();
+            applySnapshot(ev);
+            if (import.meta.env.DEV) {
+              // Dev-only timing, read by scripts/drive.mjs perf checks.
+              const w = window as unknown as { __mcTiming?: object[] };
+              (w.__mcTiming ??= []).push({
+                path: ev.path,
+                n: ev.entries.length,
+                stale: ev.stale,
+                ipc: Math.round(t1 - t0),
+                apply: Math.round(performance.now() - t1),
+              });
+            }
+          } else if (ev.type === "patch") applyPatch(ev);
+          else if (ev.type === "fresh") {
+            if (ev.path === path()) setStale(false);
+          } else {
+            batch(() => {
+              setLoading(false);
+              setStale(false);
+              setError(ev.message);
+            });
           }
-        }
-        else if (ev.type === "patch") applyPatch(ev);
-        else if (ev.type === "fresh") return; // stale/fresh indicator: step 11b
-        else {
-          setLoading(false);
-          setError(ev.message);
-        }
-      });
+        },
+        refresh,
+      );
     } catch (err) {
       if (token === generation) {
         setLoading(false);
@@ -259,9 +275,13 @@ export function createPanel(id: PanelId) {
 
   return {
     id,
-    initialPath: saved.path,
+    initialPath: saved?.path,
     path,
     parent,
+    stale,
+    network,
+    /** Re-read the current directory (⇧⌘R), bypassing the cache's shortcuts. */
+    reload: () => open(path(), undefined, false, true),
     rows,
     entries: sorted,
     current,

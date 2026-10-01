@@ -1,99 +1,122 @@
-// Frontend copy of preferences.json and state.json (docs/ipc.md). Loaded once
-// before the app renders; changes go to Rust as merge patches.
+// Preferences (preferences.json) and session state (state.json), both owned
+// by Rust. Loaded once before the app renders; changes are sent as JSON merge
+// patches (docs/ipc.md "Preferences and state").
 
 import { createSignal } from "solid-js";
 import { backend } from "../ipc";
 import { mergePatch } from "../ipc/mergePatch";
-import type { AppState, MergePatch, PanelState, Preferences } from "../ipc/types";
+import type { AppState, Bookmark, MergePatch, PanelId, PanelState, Preferences, SortKey } from "../ipc/types";
 
-export const DEFAULT_PREFS: Preferences = {
-  videoVolume: 0.8,
-  cacheMaxBytes: 100 * 1024 * 1024,
-  cacheMaxAgeDays: 180,
-};
+const DEFAULT_PREFS: Preferences = { videoVolume: 0.8, cacheMaxBytes: 104_857_600, cacheMaxAgeDays: 180 };
 
-const [prefs, setPrefsSignal] = createSignal<Preferences>(DEFAULT_PREFS);
+const [prefs, setPrefs] = createSignal<Preferences>(DEFAULT_PREFS);
 let state: AppState = {};
 
 export { prefs };
 
-export function appState(): AppState {
-  return state;
-}
-
-/** Apply `patch` locally at once and persist it (Rust writes immediately). */
-export async function updatePrefs(patch: MergePatch<Preferences>): Promise<void> {
-  setPrefsSignal((p) => mergePatch(p, patch));
-  try {
-    setPrefsSignal(await backend.prefsSet(patch));
-  } catch (err) {
-    console.warn("saving preferences failed", err);
-  }
-}
-
-/** Apply `patch` locally and send it (Rust debounces the write). */
-export function updateState(patch: MergePatch<AppState>): void {
-  state = mergePatch(state, patch);
-  backend.stateSet(patch).catch((err) => console.warn("saving state failed", err));
-}
-
-const LEGACY_KEYS = ["mc.panel.0", "mc.panel.1", "mc.bookmarks"] as const;
-
-/**
- * Patches that import the pre-files localStorage data without overwriting
- * values already in the files. `stored` maps legacy keys to their raw values.
- */
-export function migrationPatches(
-  current: { prefs: Preferences; state: AppState },
-  stored: Partial<Record<(typeof LEGACY_KEYS)[number], string | null>>,
-): { prefs: MergePatch<Preferences> | null; state: MergePatch<AppState> } {
-  const parse = (raw: string | null | undefined): unknown => {
-    try {
-      return raw ? JSON.parse(raw) : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-  const statePatch: MergePatch<AppState> = { localStorageMigrated: true };
-  const panels: Record<string, PanelState> = {};
-  for (const id of ["0", "1"] as const) {
-    const p = parse(stored[`mc.panel.${id}`]) as PanelState | undefined;
-    if (p && typeof p === "object" && !current.state.panels?.[id]) panels[id] = p;
-  }
-  if (Object.keys(panels).length) statePatch.panels = panels;
-  const bookmarks = parse(stored["mc.bookmarks"]);
-  const prefsPatch =
-    Array.isArray(bookmarks) && current.prefs.bookmarks === undefined ? { bookmarks } : null;
-  return { prefs: prefsPatch, state: statePatch };
-}
-
-function readLegacy(): Partial<Record<(typeof LEGACY_KEYS)[number], string | null>> {
-  const out: Partial<Record<(typeof LEGACY_KEYS)[number], string | null>> = {};
-  try {
-    for (const k of LEGACY_KEYS) out[k] = localStorage.getItem(k);
-  } catch {
-    // storage unavailable: nothing to import
-  }
-  return out;
-}
-
-/** Load preferences and state, importing localStorage data once. Call before rendering. */
+/** Load prefs and state, then import pre-files localStorage data once. Never throws. */
 export async function loadSettings(): Promise<void> {
   try {
     const [p, s] = await Promise.all([backend.prefsGet(), backend.stateGet()]);
-    setPrefsSignal(p);
-    state = s;
+    setPrefs(p);
+    state = s ?? {};
   } catch (err) {
-    console.warn("loading settings failed; using defaults", err);
+    console.error("loading settings failed", err);
     return;
   }
-  if (state.localStorageMigrated) return;
-  const m = migrationPatches({ prefs: prefs(), state }, readLegacy());
-  if (m.prefs) await updatePrefs(m.prefs);
-  updateState(m.state);
+  if (state.localStorageMigrated !== true) {
+    try {
+      await migrateLocalStorage();
+    } catch (err) {
+      console.error("localStorage migration failed", err);
+    }
+  }
+}
+
+export async function updatePrefs(patch: MergePatch<Preferences>): Promise<void> {
+  setPrefs((p) => mergePatch<Preferences>(p, patch)); // optimistic
   try {
-    for (const k of LEGACY_KEYS) localStorage.removeItem(k);
+    setPrefs(await backend.prefsSet(patch));
+  } catch (err) {
+    console.error("saving preferences failed", err);
+  }
+}
+
+export function panelState(id: PanelId): PanelState | undefined {
+  return state.panels?.[`${id}`];
+}
+
+/** Remember a panel's path/sort/hidden flag. Rust debounces the write. */
+export function savePanelState(id: PanelId, st: PanelState): void {
+  if (JSON.stringify(panelState(id)) === JSON.stringify(st)) return;
+  setState({ panels: { [`${id}`]: st } });
+}
+
+function setState(patch: MergePatch<AppState>) {
+  state = mergePatch<AppState>(state, patch);
+  backend.stateSet(patch).catch((err) => console.error("saving state failed", err));
+}
+
+/** Test hook: forget everything loaded. */
+export function resetSettings(): void {
+  setPrefs(DEFAULT_PREFS);
+  state = {};
+}
+
+// --- one-time import from localStorage -------------------------------------
+
+const LS_PANEL = (id: PanelId) => `mc.panel.${id}`;
+const LS_BOOKMARKS = "mc.bookmarks";
+const SORT_KEYS: SortKey[] = ["name", "ext", "size", "mtime", "none"];
+
+function readJson(key: string): unknown {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw == null ? undefined : JSON.parse(raw);
   } catch {
-    // ignore
+    return undefined;
+  }
+}
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function toPanelState(v: unknown): PanelState | undefined {
+  if (!isObj(v) || typeof v.path !== "string" || !v.path) return undefined;
+  const s = v.sort;
+  const sort =
+    isObj(s) && SORT_KEYS.includes(s.key as SortKey) && typeof s.desc === "boolean"
+      ? { key: s.key as SortKey, desc: s.desc }
+      : { key: "name" as SortKey, desc: false };
+  return { path: v.path, sort, showHidden: v.showHidden === true };
+}
+
+function toBookmarks(v: unknown): Bookmark[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((b): b is Bookmark => isObj(b) && typeof b.name === "string" && typeof b.path === "string")
+    .map((b) => ({ name: b.name, path: b.path }));
+}
+
+async function migrateLocalStorage() {
+  const panels: Record<string, PanelState> = {};
+  for (const id of [0, 1] as const) {
+    const st = toPanelState(readJson(LS_PANEL(id)));
+    if (st && !panelState(id)) panels[`${id}`] = st;
+  }
+  const bookmarks = toBookmarks(readJson(LS_BOOKMARKS));
+  // Await both writes so a failure leaves localStorage alone for the next launch.
+  if (bookmarks && prefs().bookmarks === undefined) setPrefs(await backend.prefsSet({ bookmarks }));
+  const patch: MergePatch<AppState> = { localStorageMigrated: true };
+  if (Object.keys(panels).length) patch.panels = panels;
+  await backend.stateSet(patch);
+  state = mergePatch<AppState>(state, patch);
+  for (const key of [LS_PANEL(0), LS_PANEL(1), LS_BOOKMARKS]) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // storage unavailable: nothing to remove
+    }
   }
 }

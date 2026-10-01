@@ -1,7 +1,10 @@
 //! In-memory cache of directory listings with LRU eviction.
 //!
 //! Invariant (maintained by [`crate::hub::Hub`]): every cached directory is being watched,
-//! so cached entries are kept current by watcher patches and never need re-validation.
+//! so on local volumes cached entries are kept current by watcher patches. On network
+//! volumes FSEvents is unreliable, so the hub revalidates a cached listing (directory
+//! mtime check, see [`ListingMeta`]) whenever a panel shows it. Listings loaded from the
+//! on-disk cache ([`crate::persist`]) are always revalidated.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -9,19 +12,38 @@ use std::path::{Path, PathBuf};
 use crate::model::Entry;
 
 /// Maximum number of cached directories.
-pub const DEFAULT_CAPACITY: usize = 64;
+pub const DEFAULT_CAPACITY: usize = 256;
+
+/// Where a listing came from and how old it is.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ListingMeta {
+    /// The directory's own mtime (unix millis), stat'ed *before* it was read, so a
+    /// change during the read shows up as a mismatch next time. 0 = unknown.
+    pub dir_mtime: i64,
+    /// When the directory was last fully read (unix millis).
+    pub read_at: i64,
+    /// On a network volume.
+    pub network: bool,
+}
 
 /// One cached directory, keyed by (NFC) entry name.
 #[derive(Debug, Default, Clone)]
 pub struct Listing {
     pub entries: HashMap<String, Entry>,
+    pub meta: ListingMeta,
 }
 
 impl Listing {
     pub fn from_entries(entries: Vec<Entry>) -> Self {
         Self {
             entries: entries.into_iter().map(|e| (e.name.clone(), e)).collect(),
+            meta: ListingMeta::default(),
         }
+    }
+
+    pub fn with_meta(mut self, meta: ListingMeta) -> Self {
+        self.meta = meta;
+        self
     }
 
     pub fn to_vec(&self) -> Vec<Entry> {
@@ -29,21 +51,21 @@ impl Listing {
     }
 
     /// Compare against a freshly read full listing, apply it, and return the difference.
+    /// Leaves `meta` alone.
     pub fn replace_all(&mut self, fresh: Vec<Entry>) -> Diff {
-        let fresh = Listing::from_entries(fresh);
+        let fresh = Listing::from_entries(fresh).entries;
         let removed = self
             .entries
             .keys()
-            .filter(|k| !fresh.entries.contains_key(*k))
+            .filter(|k| !fresh.contains_key(*k))
             .cloned()
             .collect();
         let upserted = fresh
-            .entries
             .values()
             .filter(|e| self.entries.get(&e.name) != Some(*e))
             .cloned()
             .collect();
-        *self = fresh;
+        self.entries = fresh;
         Diff { removed, upserted }
     }
 
@@ -114,6 +136,11 @@ impl ListingCache {
         if self.map.contains_key(dir) {
             self.touch(dir);
         }
+        self.map.get(dir)
+    }
+
+    /// Read access without changing recency.
+    pub fn peek(&self, dir: &Path) -> Option<&Listing> {
         self.map.get(dir)
     }
 

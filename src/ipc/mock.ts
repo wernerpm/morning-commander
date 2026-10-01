@@ -1,6 +1,9 @@
 // In-memory backend used outside Tauri (plain browser, Playwright tests).
 // Behaves like the Rust side: snapshots on open, patches on change.
-// Tests can reach it as `window.__mock` to simulate external FS changes.
+// Tests can reach it as `window.__mock` to simulate external FS changes,
+// inspect prefs/state, and simulate network volumes (stale-while-revalidate).
+// Tests can preseed prefs/state with `window.__mockSeed = { prefs, state }`
+// (e.g. from Playwright's addInitScript) before the app loads.
 
 import type { Backend } from "./index";
 import { mergePatch } from "./mergePatch";
@@ -17,6 +20,13 @@ interface MockNode {
 }
 
 const HOME = "/Users/demo";
+
+export const PREF_DEFAULTS = { videoVolume: 0.8, cacheMaxBytes: 104_857_600, cacheMaxAgeDays: 180 };
+
+interface MockSeed {
+  prefs?: Partial<Preferences>;
+  state?: AppState;
+}
 
 function file(size = 1234, content?: string): MockNode {
   return { kind: "file", size, mtime: Date.UTC(2026, 8, 1, 12), content };
@@ -79,10 +89,61 @@ class MockFs {
   subs = new Map<PanelId, { path: string; cb: (e: PanelEvent) => void }>();
   nextOp = 1;
   ops = new Map<number, { cancelled: boolean; answer: null | ((c: [ConflictChoice, boolean]) => void) }>();
-  // preferences.json / state.json as stored (without defaults), and window fullscreen.
+
+  // preferences.json / state.json contents (only what was set, like the files).
   prefs: Record<string, unknown> = {};
   state: AppState = {};
+  // Window fullscreen (the viewer's F key).
   fullscreen = false;
+
+  // Stale-while-revalidate simulation. `cache` holds the listing last sent for
+  // each directory; reopening a cached network dir (or any cached dir with
+  // refresh) sends it as a stale snapshot, then the differences and `fresh`.
+  cache = new Map<string, Entry[]>();
+  networkPrefixes: string[] = [];
+  revalidateMs = 30;
+
+  constructor() {
+    const w = typeof window !== "undefined" ? (window as unknown as { __mockSeed?: MockSeed }) : undefined;
+    this.resetSettings(w?.__mockSeed);
+  }
+
+  resetSettings(seed?: MockSeed) {
+    this.prefs = structuredClone(seed?.prefs ?? {});
+    this.state = structuredClone(seed?.state ?? {});
+  }
+
+  /** Mark paths under `prefix` as on a network volume; `null` clears all. */
+  setNetwork(prefix: string | null) {
+    if (prefix === null) this.networkPrefixes = [];
+    else this.networkPrefixes.push(this.norm(prefix));
+  }
+
+  isNetwork(path: string): boolean {
+    return this.networkPrefixes.some((pre) => path === pre || path.startsWith(pre === "/" ? "/" : pre + "/"));
+  }
+
+  /** Forget cached listings (like deleting the disk cache). */
+  clearCache() {
+    this.cache.clear();
+  }
+
+  remember(dirPath: string) {
+    const d = this.lookup(dirPath);
+    if (d?.children) this.cache.set(dirPath, [...d.children].map(([name, n]) => this.entry(name, n)));
+  }
+
+  /** Patch turning the cached listing `old` into `cur`, or null if they're equal. */
+  diff(old: Entry[], cur: Entry[]): { removed: string[]; upserted: Entry[] } | null {
+    const before = new Map(old.map((e) => [e.name, e]));
+    const now = new Set(cur.map((e) => e.name));
+    const removed = old.filter((e) => !now.has(e.name)).map((e) => e.name);
+    const upserted = cur.filter((e) => {
+      const b = before.get(e.name);
+      return !b || b.size !== e.size || b.mtime !== e.mtime || b.kind !== e.kind;
+    });
+    return removed.length || upserted.length ? { removed, upserted } : null;
+  }
 
   freeName(dir: MockNode, name: string): string {
     const dot = name.lastIndexOf(".");
@@ -140,7 +201,7 @@ class MockFs {
       node = this.lookup(p);
     }
     const entries = [...node.children!].map(([name, n]) => this.entry(name, n));
-    return { type: "snapshot", path: p, parent: this.parentOf(p), entries, stale: false, network: false };
+    return { type: "snapshot", path: p, parent: this.parentOf(p), entries, stale: false, network: this.isNetwork(p) };
   }
 
   notify(dirPath: string, removed: string[], upsertedNames: string[]) {
@@ -151,9 +212,15 @@ class MockFs {
       .map(([name, n]) => this.entry(name, n));
     // Deliver asynchronously, like the real watcher.
     setTimeout(() => {
+      let watched = false;
       for (const { path, cb } of this.subs.values()) {
-        if (path === dirPath) cb({ type: "patch", path, removed, upserted });
+        if (path !== dirPath) continue;
+        watched = true;
+        cb({ type: "patch", path, removed, upserted });
       }
+      // A watched directory's cached listing stays current; an unwatched one
+      // goes stale until it's revalidated on the next open.
+      if (watched) this.remember(dirPath);
     }, 30);
   }
 
@@ -176,16 +243,36 @@ class MockFs {
 const fs = new MockFs();
 if (typeof window !== "undefined") (window as unknown as { __mock: MockFs }).__mock = fs;
 
-const PREF_DEFAULTS = { videoVolume: 0.8, cacheMaxBytes: 100 * 1024 * 1024, cacheMaxAgeDays: 180 };
-
 const delay = () => new Promise((r) => setTimeout(r, 5));
 
 export const mockBackend: Backend = {
-  async panelOpen(panel, path, onEvent) {
+  async panelOpen(panel, path, onEvent, refresh = false) {
     await delay();
     const snap = fs.snapshot(path);
-    fs.subs.set(panel, { path: snap.path, cb: onEvent });
-    onEvent(snap);
+    if (snap.type !== "snapshot") {
+      fs.subs.delete(panel);
+      onEvent(snap);
+      return;
+    }
+    const sub = { path: snap.path, cb: onEvent };
+    fs.subs.set(panel, sub);
+    const cached = fs.cache.get(snap.path);
+    if (!cached || !(snap.network || refresh)) {
+      fs.cache.set(snap.path, snap.entries);
+      onEvent(snap);
+      return;
+    }
+    // Stale-while-revalidate: the cached listing now, differences and `fresh` later.
+    onEvent({ ...snap, entries: cached, stale: true });
+    setTimeout(() => {
+      if (fs.subs.get(panel) !== sub) return; // navigated away
+      const cur = fs.snapshot(snap.path);
+      if (cur.type !== "snapshot" || cur.path !== snap.path) return;
+      const d = fs.diff(cached, cur.entries);
+      fs.cache.set(snap.path, cur.entries);
+      if (d) onEvent({ type: "patch", path: snap.path, ...d });
+      onEvent({ type: "fresh", path: snap.path });
+    }, fs.revalidateMs);
   },
   async homeDir() {
     return HOME;
@@ -284,13 +371,16 @@ export const mockBackend: Backend = {
     return { free: 123 * 1024 ** 3, total: 494 * 1024 ** 3 };
   },
   async prefsGet() {
+    await delay();
     return { ...PREF_DEFAULTS, ...structuredClone(fs.prefs) } as Preferences;
   },
   async prefsSet(patch) {
+    await delay();
     fs.prefs = mergePatch(fs.prefs, patch);
-    return mockBackend.prefsGet();
+    return { ...PREF_DEFAULTS, ...structuredClone(fs.prefs) } as Preferences;
   },
   async stateGet() {
+    await delay();
     return structuredClone(fs.state);
   },
   async stateSet(patch) {
