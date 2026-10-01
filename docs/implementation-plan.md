@@ -165,6 +165,7 @@ Sort defaults to MC order: `..` first, then directories, then files, each group 
 ### Listing cache
 
 - `ListingCache`: `HashMap<PathBuf, Arc<Listing>>` behind a `parking_lot::RwLock`, with an LRU cap (say 64 directories or ~500k entries in total, whichever comes first).
+- *As built (step 11):* a 256-directory in-memory LRU backed by a persistent on-disk cache (`~/.morning-commander/cache/`, 100 MB); cached listings are served `stale` and revalidated where FSEvents can't be trusted (network volumes, after a relaunch). See [step-11](implementation-plan/step-11-persistent-cache-nas.md).
 - Visiting a cached directory returns immediately; there is no stat re-check, because the watcher keeps entries correct.
 - Evicted directories are unwatched unless a panel is showing them.
 
@@ -377,7 +378,7 @@ Each step ends with something runnable.
 - Two panels, fixed row height (22 px), columns: name, size, modified. Monospace-friendly, dense.
 - Header shows the path; footer shows item count, selection size and free space.
 - Cursor, `Enter` into dirs, `Backspace` up (cursor lands on the dir we left), `Tab` switch.
-- Remember each panel's path and restore it on launch (`tauri-plugin-store`).
+- Remember each panel's path and restore it on launch (as built: `~/.morning-commander/state.json`, see step 10 "Preferences and state files").
 
 ### Step 3 — Cache + watcher
 
@@ -428,7 +429,7 @@ Each step ends with something runnable.
 | **Letter jump semantics** | Plan: prefix type-ahead + same-letter repeat cycles. Alternative: every letter press always cycles to the next single-letter match (no prefix). Confirm. |
 | **WKWebView PDF in iframe** | Should render natively; if it's flaky (toolbar, scrolling, focus stealing keys), switch to PDF.js. Spike this early in Step 5. |
 | **Keyboard focus in viewer** | `<video>` and PDF iframes swallow keys. Need a capture-phase listener on the window for `Esc` and prev/next, and to test that iframes don't trap focus. |
-| **FSEvents on network volumes** | SMB/NFS mounts may not deliver events. Detect non-local volumes (`statfs`) and fall back to polling the visible directory every few seconds. |
+| **FSEvents on network volumes** | Resolved in step 11c: network volumes are detected from the kernel mount table (`getmntinfo`, never blocks on the NAS) and shown directories are polled via their mtime every 3–10 s. FSEvents does report changes made from this Mac. |
 | **TCC prompts** | Reading Desktop/Documents/Downloads/removable volumes prompts once per app. Unsigned dev builds may re-prompt after each rebuild. |
 | **Huge directories** | Measured: 100k files ≈ 0.3 s cold, 0.14 s cached. Next lever would be a compact wire format (10 MB JSON today). |
 | **WebDriver key coverage** | tauri-plugin-webdriver 0.2 doesn't send End/Home/PageUp/PageDown; `drive.mjs press:` works around it. |

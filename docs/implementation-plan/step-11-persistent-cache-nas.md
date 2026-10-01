@@ -20,7 +20,7 @@ On disk the directory takes 396 KB in the compact encoding (662 KB as plain JSON
 2. **Persist the listing cache to disk as JSON** under `~/.morning-commander/`, capped (default **100 MB**), keeping the most recently visited directories and evicting the oldest ones.
 3. **Network volumes behave well**: never block the UI, show progress for slow listings, detect changes without FSEvents (which doesn't work reliably on SMB/NFS), and prefetch likely next directories.
 
-## Today (baseline)
+## Baseline (before 11b, 2026-09-30)
 
 - In-memory `ListingCache` (LRU, 64 dirs), lost on quit. Every launch re-reads from the network.
 - Freshness relies on FSEvents via `notify`; on network mounts events usually don't arrive, so remote listings go stale while shown.
@@ -140,7 +140,7 @@ After a network directory is shown and idle for 1 s, prefetch listings of its vi
 
 ### Memory cache vs disk cache
 
-- Memory: current LRU, raise to ~256 dirs or a byte budget (~200 MB of entries).
+- Memory: current LRU, raise to ~256 dirs or a byte budget (~200 MB of entries). *(Done: 256 dirs.)*
 - Disk: write-behind. On snapshot/patch mark the directory dirty; a background thread flushes dirty directories every 2 s and on app exit (Tauri `RunEvent::ExitRequested`). `index.json` is flushed after the directory files.
 
 ## Files
