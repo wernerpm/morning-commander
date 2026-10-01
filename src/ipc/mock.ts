@@ -66,7 +66,7 @@ function seed(): MockNode {
         }),
         Pictures: dir({
           "beach.jpg": fixture("tiny.jpg", 9059),
-          "cat.png": fixture("tiny.png", 2687),
+          "cat.png": fixture("tiny.jpg", 9059), // .gitignore excludes *.png; browsers sniff the type
           "holiday.mp4": fixture("tiny.mp4", 26_143),
           "Sunset.heic": file(1_500_000),
         }),
