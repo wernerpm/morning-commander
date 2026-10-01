@@ -16,7 +16,7 @@
 | 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
-| 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (real-app check on macOS pending) | [step-10](implementation-plan/step-10-media-viewers.md) |
+| 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (verified in real app) | [step-10](implementation-plan/step-10-media-viewers.md) |
 | 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | PARTIAL: 11b (disk cache, stale-while-revalidate) and 11c (polling) DONE, verified on the real NAS; 11a (streaming) and 11d (prefetch) not started | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
 
 Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`release.md`](release.md) (build and publish), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
@@ -29,12 +29,11 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 
 1. **Step 11a — NAS: streaming first visits**: a never-visited 4.3k-entry SMB directory still takes ~12 s before anything shows (the server enumerates slowly; see step 11 measurements). Send the first `getattrlistbulk` batch as a partial snapshot, `append` the rest, "Reading… N" in the footer, cancel between batches when navigating away; plus an "offline" badge when a stale listing can't be revalidated ([step-11](implementation-plan/step-11-persistent-cache-nas.md)).
 2. **Step 11c — check by hand**: a file added on the NAS from another device shows up within ~5 s (can't be simulated on this Mac).
-3. **Step 10 — verify in the real app**: video seek/volume, PDF scroll, fullscreen toggle with `scripts/drive.mjs` on macOS ([step-10](implementation-plan/step-10-media-viewers.md)).
-4. **Step 11d — prefetch** subdirectories on the NAS (the cache makes revisits instant; prefetch would make first visits of subfolders instant too).
-5. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
-6. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
-7. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
-8. **Release workflow** — Developer ID signing + notarisation on tag ([release.md](release.md)).
+3. **Step 11d — prefetch** subdirectories on the NAS (the cache makes revisits instant; prefetch would make first visits of subfolders instant too).
+4. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
+5. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
+6. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
+7. **Release workflow** — Developer ID signing + notarisation on tag ([release.md](release.md)).
 
 ### Measured (dev build, M-series Mac)
 
