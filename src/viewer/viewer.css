@@ -70,6 +70,7 @@
 
 /* Image */
 .viewer-image {
+  outline: none;
   width: 100%;
   height: 100%;
   display: flex;
@@ -94,34 +95,96 @@
   height: auto;
 }
 
-/* PDF */
+/* PDF (PDF.js) */
 .viewer-pdf {
+  align-self: stretch;
+  flex: 1;
+  overflow: auto;
+  outline: none;
+  background: #525659;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+.viewer-pdf .viewer-status {
+  margin: auto;
+  color: #ddd;
+}
+.viewer-pdf-page {
+  flex: none;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.viewer-pdf-page canvas {
+  display: block;
   width: 100%;
   height: 100%;
-  border: none;
-  background: #fff;
 }
 
 /* Video / audio */
+.viewer-media {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #000;
+}
+.viewer-media.audio {
+  flex-direction: column;
+  gap: 16px;
+  background: none;
+}
 .viewer-video {
-  max-width: 100%;
-  max-height: 100%;
   width: 100%;
   height: 100%;
   background: #000;
   outline: none;
 }
-.viewer-audio {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
 .viewer-audio-name {
   font-size: 16px;
 }
-.viewer-audio audio {
+.viewer-media audio {
   width: min(600px, 80vw);
+  outline: none;
+}
+.viewer-overlay {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.viewer-overlay-bar {
+  width: 160px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.viewer-overlay-bar > div {
+  height: 100%;
+  background: #fff;
+}
+
+/* Fullscreen: content only */
+.viewer.fullscreen .viewer-header,
+.viewer.fullscreen .viewer-hint {
+  display: none;
 }
 
 /* Text */

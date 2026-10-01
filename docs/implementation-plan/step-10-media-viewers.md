@@ -1,6 +1,6 @@
 # Step 10 — Media-specific viewers
 
-> Status: NOT STARTED (planned 2026-09-30)
+> Status: DONE (2026-09-30), except verification in the real app (`scripts/drive.mjs`, needs macOS). Frontend unit + e2e (mock backend) and Rust tests pass.
 
 ## Goals
 
@@ -109,14 +109,24 @@ interface Preferences {
 - Rust: prefs round-trip, atomic write, unknown-field preservation.
 - Real app (`scripts/drive.mjs`): video seek/volume, PDF scroll, fullscreen toggle.
 
+## Implementation notes
+
+- **Files:** `src/viewer/Viewer.tsx` (shell), `ImageView.tsx`, `MediaView.tsx` (video *and* audio: audio gets the same seek/volume keys), `PdfView.tsx`, `TextView.tsx`, `InfoCard.tsx`; key maps are pure functions in `src/viewer/keys.ts` (`shellKey`, `mediaKey`, `pdfKey`, `imageKey`); navigation groups in `kind.ts` (`navGroup`, `stepInGroup`).
+- **Navigation groups:** photos, videos, audio, PDFs, and "documents" (text + unknown files together, so the text viewer's `←`/`→` still walks readme → notes → archive). Every view: `⌘←`/`⌘→`; views that don't use them also get plain `←`/`→`, `PageUp`/`PageDown`, `Home`/`End`. The header shows the position within the group ("2 / 3 photos").
+- **Video:** the key handler runs in the window's capture phase and `preventDefault`s what it consumes, so native controls never double-handle `Space`/arrows. Volume changes from the native slider are saved too (on `volumechange`, debounced 500 ms, flushed on close). `+`/`=` and `-`/`_` both work (with or without Shift). Controls hide after 2 s without mouse movement.
+- **PDF:** `pdfjs-dist` **legacy** build (supports the Safari 16 WKWebView on macOS 13), lazy-loaded into its own chunk (~150 KB gzip + worker), so the main bundle is unchanged. The file is `fetch`ed whole (`connect-src` now allows `asset:`); pages are laid out at page 1's size, fitted to the window width (max 1000 px), and rendered into canvases only within ~2 screens of the viewport (farther canvases are dropped). The header shows "p. 3 / 12". `frame-src` was removed from the CSP.
+- **Fullscreen:** the header and hint bar are hidden while fullscreen. A window `resize` re-reads `isFullscreen()` so leaving fullscreen with the green button keeps `Esc` right.
+- **Preferences/state:** `src-tauri/src/prefs.rs` + `src/app/settings.ts`, exactly as specified in `docs/ipc.md` (merge patches, defaults, debounced state, flush on exit, `*.corrupt`, `localStorageMigrated`). `src/index.tsx` loads settings before rendering; panels and bookmarks no longer touch `localStorage`.
+
 ## Acceptance criteria
 
-- [ ] Opening a video: it plays and `←`/`→`/`↑`/`↓` seek immediately, no click
-- [ ] `=`/`-` change volume; the level survives closing the viewer and restarting the app
-- [ ] Opening a PDF: `↓` scrolls immediately; arrows never change file; `Esc` always closes
-- [ ] `F` toggles fullscreen in all three viewers; `Esc` leaves fullscreen first
-- [ ] `⌘←`/`⌘→` move to the previous/next file of the same kind
-- [ ] Photos: `←`/`→` skip non-photo files
+- [x] Opening a video: it plays and `←`/`→`/`↑`/`↓` seek immediately, no click (e2e: focus + seek)
+- [x] `=`/`-` change volume; the level survives closing the viewer and restarting the app (e2e: survives closing; restart = `preferences.json`, Rust tests)
+- [x] Opening a PDF: `↓` scrolls immediately; arrows never change file; `Esc` always closes
+- [x] `F` toggles fullscreen in all three viewers; `Esc` leaves fullscreen first
+- [x] `⌘←`/`⌘→` move to the previous/next file of the same kind
+- [x] Photos: `←`/`→` skip non-photo files
+- [ ] Verified in the real app on macOS (video seek/volume, PDF scroll, fullscreen toggle)
 
 ## Open questions
 

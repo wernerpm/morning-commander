@@ -15,6 +15,8 @@ interface MockNode {
   mtime: number;
   children?: Map<string, MockNode>;
   content?: string;
+  /** Real file served by the dev server (tests/fixtures), for media the viewer must load. */
+  url?: string;
 }
 
 const HOME = "/Users/demo";
@@ -28,6 +30,11 @@ interface MockSeed {
 
 function file(size = 1234, content?: string): MockNode {
   return { kind: "file", size, mtime: Date.UTC(2026, 8, 1, 12), content };
+}
+
+/** A file whose bytes come from tests/fixtures (served by Vite in dev and e2e). */
+function fixture(name: string, size: number): MockNode {
+  return { ...file(size), url: `/tests/fixtures/${name}` };
 }
 
 function dir(children: Record<string, MockNode> = {}): MockNode {
@@ -47,12 +54,22 @@ function seed(): MockNode {
       demo: dir({
         ".zshrc": file(120, "export PATH=$PATH\n"),
         Documents: dir({
-          "report.pdf": file(84_000),
+          "report.pdf": fixture("pages.pdf", 1_897),
           "notes.md": file(300, "# Notes\n\nhello from the mock backend\n"),
           "budget.csv": file(900, "a,b\n1,2\n"),
         }),
-        Downloads: dir({ "movie.mp4": file(50_000_000), "archive.zip": file(3_000_000) }),
-        Pictures: dir({ "beach.jpg": file(2_000_000), "cat.png": file(500_000), "Sunset.heic": file(1_500_000) }),
+        Downloads: dir({
+          "movie.mp4": fixture("tiny.mp4", 26_143),
+          "clip.webm": fixture("tiny.webm", 29_139),
+          "installer.dmg": file(80_000_000),
+          "archive.zip": file(3_000_000),
+        }),
+        Pictures: dir({
+          "beach.jpg": fixture("tiny.jpg", 9059),
+          "cat.png": fixture("tiny.jpg", 9059), // .gitignore excludes *.png; browsers sniff the type
+          "holiday.mp4": fixture("tiny.mp4", 26_143),
+          "Sunset.heic": file(1_500_000),
+        }),
         Music: dir({}),
         Many: dir(many),
         "readme.txt": file(42, "Morning Commander mock filesystem\n"),
@@ -76,6 +93,9 @@ class MockFs {
   // preferences.json / state.json contents (only what was set, like the files).
   prefs: Record<string, unknown> = {};
   state: AppState = {};
+  // Window fullscreen (the viewer's F key) and how often focusWindow was called.
+  fullscreen = false;
+  focusRequests = 0;
 
   // Stale-while-revalidate simulation. `cache` holds the listing last sent for
   // each directory; reopening a cached network dir (or any cached dir with
@@ -367,7 +387,16 @@ export const mockBackend: Backend = {
   async stateSet(patch) {
     fs.state = mergePatch(fs.state, patch);
   },
+  async setFullscreen(on) {
+    fs.fullscreen = on;
+  },
+  async isFullscreen() {
+    return fs.fullscreen;
+  },
+  async focusWindow() {
+    fs.focusRequests++;
+  },
   fileUrl(path) {
-    return `mock://${path}`;
+    return fs.lookup(path)?.url ?? `mock://${path}`;
   },
 };

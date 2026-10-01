@@ -1,5 +1,9 @@
-// Full-window viewer for images, PDFs, video, audio and text.
-// See docs/implementation-plan/step-5-viewer.md.
+// Full-window viewer shell: header, file-to-file navigation by kind, fullscreen,
+// and one of the per-type views. See docs/implementation-plan/step-10-media-viewers.md.
+//
+// One capture-phase key listener asks the active view first (its handleKey),
+// then falls back to the shell keys: Esc, F3, ⌘O, F, ⌘←/⌘→, and plain
+// ←/→/PageUp/PageDown/Home/End when the view doesn't use them.
 
 import {
   createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, onMount, Show, Switch,
@@ -7,7 +11,14 @@ import {
 } from "solid-js";
 import { backend } from "../ipc";
 import type { TextPreview } from "../ipc/types";
-import { viewKind, type ViewKind } from "./kind";
+import { formatSize } from "./format";
+import ImageView from "./ImageView";
+import InfoCard from "./InfoCard";
+import { navGroup, stepInGroup, viewKind, type NavGroup, type ViewKind } from "./kind";
+import { shellKey, type KeyHandler } from "./keys";
+import MediaView from "./MediaView";
+import PdfView from "./PdfView";
+import TextView from "./TextView";
 import "./viewer.css";
 
 export interface ViewerProps {
@@ -17,24 +28,22 @@ export interface ViewerProps {
 }
 
 const TEXT_MAX = 5 * 1024 * 1024;
+// Leaving macOS fullscreen is an animated Space switch, after which the webview
+// is no longer first responder: keys go nowhere, even after ⌘Tab, until a click.
+// Re-focus the window and webview a few times while the animation settles.
+const REFOCUS_DELAYS_MS = [0, 300, 800];
 const SNIFF_MAX = 64 * 1024;
-const SEEK_SECONDS = 5;
-const ZOOM_STEP = 1.25;
+
+const GROUP_NOUN: Record<NavGroup, string> = {
+  image: "photos",
+  video: "videos",
+  audio: "audio files",
+  pdf: "PDFs",
+  document: "files",
+};
 
 function baseName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
-}
-
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let v = bytes / 1024;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
 
 function clamp(i: number, len: number): number {
@@ -46,13 +55,19 @@ export default function Viewer(props: ViewerProps): JSX.Element {
   const path = () => props.files[index()] ?? "";
   const name = () => baseName(path());
   const kind = createMemo<ViewKind>(() => viewKind(name()));
+  const groups = createMemo(() => props.files.map((f) => navGroup(viewKind(baseName(f)))));
 
   // Per-file state, reset whenever the file changes.
-  const [mediaError, setMediaError] = createSignal(false);
-  const [zoom, setZoom] = createSignal<number | null>(null); // null = fit to window
+  const [error, setError] = createSignal<string | null>(null);
+  const [status, setStatus] = createSignal("");
+  let viewKeys: KeyHandler | undefined;
   createEffect(on(path, () => {
-    setMediaError(false);
-    setZoom(null);
+    setError(null);
+    setStatus("");
+    // Views focus themselves on mount; if the old view took focus with it, keep it in the viewer.
+    queueMicrotask(() => {
+      if (!root.contains(document.activeElement)) root.focus();
+    });
   }));
 
   // Text for "text" files, and a sniff for "other" files.
@@ -70,106 +85,142 @@ export default function Viewer(props: ViewerProps): JSX.Element {
     const t = text();
     return t && !("error" in t) ? t : undefined;
   };
-  const size = () => preview()?.size;
+
+  const [fullscreen, setFullscreenSignal] = createSignal(false);
+  /** After leaving fullscreen: focus the window, then the element that had focus (or the viewer). */
+  const restoreFocus = () => {
+    const target = document.activeElement;
+    for (const ms of REFOCUS_DELAYS_MS) {
+      window.setTimeout(() => {
+        backend.focusWindow().catch((err) => console.warn("focus:", err));
+        if (!root.isConnected) return; // viewer closed: the panels take focus
+        const el = target instanceof HTMLElement && root.contains(target) ? target : root;
+        if (document.activeElement !== el) el.focus();
+      }, ms);
+    }
+  };
+  const setFullscreen = (on: boolean) => {
+    setFullscreenSignal(on);
+    backend.setFullscreen(on).then(
+      () => !on && restoreFocus(),
+      (err) => console.warn("fullscreen:", err),
+    );
+  };
+  // The window can also leave fullscreen without us (green button, Mission Control).
+  const syncFullscreen = () =>
+    void backend.isFullscreen().then((on) => {
+      const left = fullscreen() && !on;
+      setFullscreenSignal(on);
+      if (left) restoreFocus();
+    }, () => {});
 
   let root!: HTMLDivElement;
-  let media: HTMLMediaElement | undefined;
-  let img: HTMLImageElement | undefined;
-  let scroller: HTMLDivElement | undefined;
 
   const openDefault = () => {
     if (path()) void backend.openDefault(path());
   };
-  const close = () => props.onClose(path());
-  const go = (i: number) => {
-    if (props.files.length) setIndex(clamp(i, props.files.length));
+  const close = () => {
+    if (fullscreen()) setFullscreen(false);
+    props.onClose(path());
+  };
+  const nav = (to: "prev" | "next" | "first" | "last") => {
+    const i = stepInGroup(groups(), index(), to);
+    if (i !== index()) setIndex(i);
   };
 
   // Enter opens the file externally when we can't show it ourselves.
   const showsFallback = () =>
-    mediaError() || (kind() === "other" && !!preview()?.binary) || (!!text() && "error" in text()!);
-
-  const zoomBy = (factor: number) => {
-    if (!img || !img.naturalWidth) return;
-    const current = zoom() ?? img.clientWidth / img.naturalWidth;
-    setZoom(Math.min(32, Math.max(0.05, current * factor)));
-  };
+    !!error() || (kind() === "other" && !!preview()?.binary) || (!!text() && "error" in text()!);
 
   const onKey = (e: KeyboardEvent) => {
-    const k = kind();
-    const mediaFocused = !!media && document.activeElement === media;
-    let handled = true;
-
-    if (e.key === "Escape" || e.key === "F3") close();
-    else if (e.metaKey && e.key.toLowerCase() === "o") openDefault();
-    else if (e.metaKey || e.ctrlKey || e.altKey) handled = false;
-    else if ((k === "video" || k === "audio") && media && e.key === " ") {
-      if (media.paused) void media.play();
-      else media.pause();
-    } else if (mediaFocused && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-      media!.currentTime = Math.max(0, media!.currentTime + (e.key === "ArrowLeft" ? -SEEK_SECONDS : SEEK_SECONDS));
-    } else if (e.key === "ArrowLeft" || e.key === "PageUp") go(index() - 1);
-    else if (e.key === "ArrowRight" || e.key === "PageDown") go(index() + 1);
-    else if (e.key === "Home") go(0);
-    else if (e.key === "End") go(props.files.length - 1);
-    else if (e.key === "Enter" && showsFallback()) openDefault();
-    else if (k === "image" && (e.key === "+" || e.key === "=")) zoomBy(ZOOM_STEP);
-    else if (k === "image" && e.key === "-") zoomBy(1 / ZOOM_STEP);
-    else if (k === "image" && e.key === "0") setZoom(null);
-    else handled = false;
+    let handled = e.key !== "Escape" && !!viewKeys?.(e);
+    if (!handled) {
+      const a = shellKey(e);
+      handled = true;
+      if (!a) handled = false;
+      else if (a.type === "escape") {
+        if (fullscreen()) setFullscreen(false);
+        else close();
+      } else if (a.type === "close") close();
+      else if (a.type === "openDefault") openDefault();
+      else if (a.type === "fullscreen") setFullscreen(!fullscreen());
+      else if (a.type === "nav") nav(a.to);
+      else if (a.type === "enter" && showsFallback()) openDefault();
+      else handled = false;
+    }
 
     if (handled) {
       e.preventDefault();
       e.stopImmediatePropagation();
-    } else if (!mediaFocused) {
+    } else {
       // Keep keys away from the panels underneath, but let the browser's
-      // default action (e.g. scrolling the text view) happen. Native media
-      // controls still get keys while the media element is focused.
+      // default action (e.g. scrolling the text view) happen.
       e.stopImmediatePropagation();
     }
   };
 
   onMount(() => {
     window.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", syncFullscreen);
+    syncFullscreen();
     root.focus();
   });
   onCleanup(() => {
     window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("resize", syncFullscreen);
     (document.activeElement as HTMLElement | null)?.blur?.();
     document.body.focus();
   });
 
-  // Keep keyboard focus in our document: iframes (PDF) and media grab it.
-  const reclaimFocus = () => {
-    if (document.activeElement instanceof HTMLIFrameElement) document.activeElement.blur();
-    (scroller ?? root).focus();
-  };
-  createEffect(on(path, () => queueMicrotask(reclaimFocus)));
-
-  const onMediaRef = (el: HTMLMediaElement) => {
-    media = el;
-    onCleanup(() => {
-      if (media === el) media = undefined;
-    });
+  const position = () => {
+    const g = groups();
+    const mine = g[index()];
+    if (mine === undefined) return "";
+    let pos = 0;
+    let total = 0;
+    for (let i = 0; i < g.length; i++) {
+      if (g[i] !== mine) continue;
+      total++;
+      if (i <= index()) pos = total;
+    }
+    return `${pos} / ${total} ${GROUP_NOUN[mine]}`;
   };
 
   const hint = () => {
-    const common = "Esc close · ←/→ prev/next · ⌘O open with default app";
+    const tail = "F fullscreen · ⌘O open with default app · Esc close";
     switch (kind()) {
-      case "image": return `${common} · +/− zoom · 0 fit`;
+      case "image": return `←/→ previous/next photo · +/− zoom · 0 fit · ${tail}`;
       case "video":
-      case "audio": return `${common} · Space play/pause · click player then ←/→ seek`;
-      default: return common;
+      case "audio": return `←/→ ±5 s · ↑/↓ ±1 min · =/− volume · Space play/pause · M mute · ⌘←/⌘→ previous/next · ${tail}`;
+      case "pdf": return `↑/↓ scroll · Space/⇧Space page · Home/End · +/− zoom · ⌘←/⌘→ previous/next PDF · ${tail}`;
+      default: return `←/→ previous/next file · ${tail}`;
     }
   };
 
+  const register = (h: KeyHandler) => {
+    viewKeys = h;
+    onCleanup(() => {
+      if (viewKeys === h) viewKeys = undefined;
+    });
+  };
+  const onMediaError = () => setError("unsupported");
+
   return (
-    <div class="viewer" ref={root} tabIndex={-1} role="dialog" aria-label={`Viewer: ${name()}`}>
+    <div
+      class="viewer"
+      classList={{ fullscreen: fullscreen() }}
+      ref={root}
+      tabIndex={-1}
+      role="dialog"
+      aria-label={`Viewer: ${name()}`}
+      data-kind={kind()}
+    >
       <header class="viewer-header">
         <span class="viewer-name" title={path()}>{name() || "No files"}</span>
         <span class="viewer-meta">
-          <Show when={size() !== undefined}>{formatSize(size()!)} · </Show>
-          {props.files.length ? `${index() + 1} / ${props.files.length}` : ""}
+          <Show when={preview()?.size !== undefined}>{formatSize(preview()!.size)} · </Show>
+          <Show when={status()}>{status()} · </Show>
+          {position()}
         </span>
         <button class="viewer-close" onClick={close} aria-label="Close viewer">✕</button>
       </header>
@@ -178,47 +229,41 @@ export default function Viewer(props: ViewerProps): JSX.Element {
         <Show when={path()} keyed>
           {(p) => (
             <Switch>
-              <Match when={mediaError()}>
-                <FallbackCard
-                  title={kind() === "image" ? "Can't display this image" : "Can't play this format"}
+              <Match when={error()}>
+                <InfoCard
+                  title={
+                    kind() === "image" ? "Can't display this image"
+                    : kind() === "pdf" ? "Can't display this PDF"
+                    : "Can't play this format"
+                  }
                   name={name()}
+                  detail={error() !== "unsupported" ? error()! : undefined}
                   onOpen={openDefault}
                 />
               </Match>
 
               <Match when={kind() === "image"}>
-                <div class="viewer-image" classList={{ zoomed: zoom() !== null }}>
-                  <img
-                    ref={img}
-                    src={backend.fileUrl(p)}
-                    alt={name()}
-                    draggable={false}
-                    style={zoom() !== null && img ? { width: `${img.naturalWidth * zoom()!}px` } : undefined}
-                    onError={() => setMediaError(true)}
-                  />
-                </div>
+                <ImageView url={backend.fileUrl(p)} name={name()} register={register} onError={onMediaError} />
               </Match>
 
               <Match when={kind() === "pdf"}>
-                <iframe class="viewer-pdf" src={backend.fileUrl(p)} title={name()} onLoad={reclaimFocus} />
-              </Match>
-
-              <Match when={kind() === "video"}>
-                <video
-                  ref={onMediaRef}
-                  class="viewer-video"
-                  src={backend.fileUrl(p)}
-                  controls
-                  autoplay
-                  onError={() => setMediaError(true)}
+                <PdfView
+                  url={backend.fileUrl(p)}
+                  name={name()}
+                  register={register}
+                  onError={(m) => setError(m)}
+                  onStatus={setStatus}
                 />
               </Match>
 
-              <Match when={kind() === "audio"}>
-                <div class="viewer-audio">
-                  <div class="viewer-audio-name">{name()}</div>
-                  <audio ref={onMediaRef} src={backend.fileUrl(p)} controls autoplay onError={() => setMediaError(true)} />
-                </div>
+              <Match when={kind() === "video" || kind() === "audio"}>
+                <MediaView
+                  url={backend.fileUrl(p)}
+                  name={name()}
+                  video={kind() === "video"}
+                  register={register}
+                  onError={onMediaError}
+                />
               </Match>
 
               <Match when={text.loading}>
@@ -226,7 +271,7 @@ export default function Viewer(props: ViewerProps): JSX.Element {
               </Match>
 
               <Match when={text() && "error" in text()!}>
-                <FallbackCard
+                <InfoCard
                   title="Can't read this file"
                   detail={(text() as { error: string }).error}
                   name={name()}
@@ -235,20 +280,11 @@ export default function Viewer(props: ViewerProps): JSX.Element {
               </Match>
 
               <Match when={preview()?.binary}>
-                <FallbackCard title="No preview" name={name()} size={preview()!.size} onOpen={openDefault} />
+                <InfoCard title="No preview" name={name()} size={preview()!.size} onOpen={openDefault} />
               </Match>
 
               <Match when={preview()}>
-                <TextView
-                  preview={preview()!}
-                  ref={(el) => {
-                    scroller = el;
-                    onCleanup(() => {
-                      if (scroller === el) scroller = undefined;
-                    });
-                    queueMicrotask(() => el.focus());
-                  }}
-                />
+                <TextView preview={preview()!} />
               </Match>
             </Switch>
           )}
@@ -256,52 +292,6 @@ export default function Viewer(props: ViewerProps): JSX.Element {
       </div>
 
       <footer class="viewer-hint">{hint()}</footer>
-    </div>
-  );
-}
-
-function FallbackCard(props: { title: string; name: string; size?: number; detail?: string; onOpen: () => void }) {
-  return (
-    <div class="viewer-card">
-      <div class="viewer-card-title">{props.title}</div>
-      <div class="viewer-card-name">{props.name}</div>
-      <Show when={props.size !== undefined}>
-        <div class="viewer-card-detail">{formatSize(props.size!)}</div>
-      </Show>
-      <Show when={props.detail}>
-        <div class="viewer-card-detail">{props.detail}</div>
-      </Show>
-      <button class="viewer-card-open" onClick={props.onOpen}>
-        Open with default app <kbd>⌘O</kbd> <kbd>Enter</kbd>
-      </button>
-    </div>
-  );
-}
-
-// One text node for the content and one for the gutter, so even a 5 MB file
-// is only a handful of DOM nodes.
-function TextView(props: { preview: TextPreview; ref: (el: HTMLDivElement) => void }) {
-  const gutter = createMemo(() => {
-    let lines = 1;
-    const t = props.preview.text;
-    for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) === 10) lines++;
-    if (t.endsWith("\n")) lines--;
-    const out: string[] = new Array(Math.max(lines, 1));
-    for (let i = 0; i < out.length; i++) out[i] = String(i + 1);
-    return out.join("\n");
-  });
-
-  return (
-    <div class="viewer-text" ref={props.ref} tabIndex={-1}>
-      <Show when={props.preview.truncated}>
-        <div class="viewer-truncated">
-          Showing the first {formatSize(props.preview.text.length)} of {formatSize(props.preview.size)}
-        </div>
-      </Show>
-      <div class="viewer-text-grid">
-        <pre class="viewer-gutter" aria-hidden="true">{gutter()}</pre>
-        <pre class="viewer-code">{props.preview.text}</pre>
-      </div>
     </div>
   );
 }

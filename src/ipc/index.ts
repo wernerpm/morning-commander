@@ -2,6 +2,8 @@
 // in-memory mock when running outside Tauri (plain browser, Playwright).
 
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppState,
   ConflictChoice,
@@ -36,6 +38,11 @@ export interface Backend {
   prefsSet(patch: MergePatch<Preferences>): Promise<Preferences>;
   stateGet(): Promise<AppState>;
   stateSet(patch: MergePatch<AppState>): Promise<void>;
+  /** Window fullscreen (the viewer fills the window, so this is viewer fullscreen). */
+  setFullscreen(on: boolean): Promise<void>;
+  isFullscreen(): Promise<boolean>;
+  /** Make the window key and the webview first responder (after leaving fullscreen). */
+  focusWindow(): Promise<void>;
   fileUrl(path: string): string;
 }
 
@@ -63,6 +70,12 @@ const tauriBackend: Backend = {
   prefsSet: (patch) => invoke<Preferences>("prefs_set", { patch }),
   stateGet: () => invoke<AppState>("state_get"),
   stateSet: (patch) => invoke("state_set", { patch }),
+  setFullscreen: (on) => getCurrentWindow().setFullscreen(on),
+  isFullscreen: () => getCurrentWindow().isFullscreen(),
+  async focusWindow() {
+    await getCurrentWindow().setFocus();
+    await getCurrentWebview().setFocus();
+  },
   fileUrl: (path) => convertFileSrc(path),
 };
 
