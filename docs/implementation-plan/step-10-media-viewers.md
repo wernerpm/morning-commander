@@ -78,7 +78,7 @@ Layout:
 ```
 
 - Keep preferences and state in separate files so frequent state writes can never corrupt settings.
-- **Migration:** on first launch (no `state.json`), the frontend reads `localStorage` keys `mc.panel.0`, `mc.panel.1`, `mc.bookmarks`, sends them to Rust (`prefs_set` / `state_set`), then removes them. After that `localStorage` isn't used.
+- **Migration:** once (until `state.json` has `localStorageMigrated: true` — a flag rather than "no `state.json`" because the dev origin and the bundled app have separate `localStorage`s but share the files), the frontend reads `localStorage` keys `mc.panel.0`, `mc.panel.1`, `mc.bookmarks`, sends them to Rust (`prefs_set` / `state_set`), then removes them. After that `localStorage` isn't used.
 - State writes are debounced (~500 ms) and flushed on exit.
 
 New Rust module `prefs.rs` and commands (add to `docs/ipc.md`):

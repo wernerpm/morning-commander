@@ -1,6 +1,6 @@
 # Morning Commander Implementation Plan
 
-> Last updated: 2026-09-30
+> Last updated: 2026-10-01
 
 ## Implementation Status
 
@@ -17,7 +17,7 @@
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
 | 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (real-app check on macOS pending) | [step-10](implementation-plan/step-10-media-viewers.md) |
-| 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | NOT STARTED (planned, **top priority**) | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
+| 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | PARTIAL: 11b (disk cache, stale-while-revalidate) and 11c (polling) DONE, verified on the real NAS; 11a (streaming) and 11d (prefetch) not started | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
 
 Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`release.md`](release.md) (build and publish), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).
 
@@ -27,10 +27,10 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 
 **Context:** the owner's media library lives on a NAS, and slow remote listings (Finder is very slow there) are the main pain point. Prioritise accordingly.
 
-1. **Step 11a/b — NAS: non-blocking streaming listings, then persistent JSON cache with stale-while-revalidate** ([step-11](implementation-plan/step-11-persistent-cache-nas.md)). Start by measuring the real NAS.
-2. **Step 11c — NAS freshness**: poll shown network directories (FSEvents doesn't work there).
+1. **Step 11a — NAS: streaming first visits**: a never-visited 4.3k-entry SMB directory still takes ~12 s before anything shows (the server enumerates slowly; see step 11 measurements). Send the first `getattrlistbulk` batch as a partial snapshot, `append` the rest, "Reading… N" in the footer, cancel between batches when navigating away; plus an "offline" badge when a stale listing can't be revalidated ([step-11](implementation-plan/step-11-persistent-cache-nas.md)).
+2. **Step 11c — check by hand**: a file added on the NAS from another device shows up within ~5 s (can't be simulated on this Mac).
 3. **Step 10 — verify in the real app**: video seek/volume, PDF scroll, fullscreen toggle with `scripts/drive.mjs` on macOS ([step-10](implementation-plan/step-10-media-viewers.md)).
-4. **Step 11d — prefetch** subdirectories on the NAS.
+4. **Step 11d — prefetch** subdirectories on the NAS (the cache makes revisits instant; prefetch would make first visits of subfolders instant too).
 5. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
 6. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
 7. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
@@ -44,6 +44,7 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 | 100k-file dir in the app, cold: IPC / sort+render | ~180 ms / ~110 ms (was ~1.2 s total) |
 | 100k-file dir in the app, cached: IPC / sort+render | ~65 ms / ~70 ms |
 | External create/delete/rename → UI | < 500 ms (FSEvents + 100 ms debounce) |
+| NAS (SMB), ~4.3k-entry dir: cold / revisit / after relaunch | ~12.6 s (not cached) / **11 ms** / **42 ms** (was ~8.6 s each; step 11) |
 
 ### Decisions made during implementation
 
@@ -52,7 +53,8 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 - **Sorting** uses precomputed natural-sort keys, not `Intl.Collator` (10× faster at 100k).
 - **Snapshot is sent in one piece** (JSON over a Tauri channel); the two-stage snapshot wasn't needed.
 - **Real-app testing** via `tauri-plugin-webdriver` behind the `webdriver` cargo feature.
-- **Settings move out of `localStorage`** into `~/.morning-commander/{preferences.json,state.json}` owned by Rust, with the listing cache in `~/.morning-commander/cache/` excluded from Time Machine (step 10 "Preferences and state files", step 11). Today panel state and bookmarks are still in `localStorage`.
+- **Settings move out of `localStorage`** into `~/.morning-commander/{preferences.json,state.json}` owned by Rust, with the listing cache in `~/.morning-commander/cache/` excluded from Time Machine (step 10 "Preferences and state files", step 11). Done 2026-10-01; existing `localStorage` data is imported once (`localStorageMigrated` flag in `state.json`).
+- **Stale-while-revalidate** for cached listings (step 11b): snapshots carry `stale`/`network`, a `fresh` event follows revalidation; on network volumes the directory's mtime decides whether to re-read (verified safe on the owner's NAS). Network directories are polled instead of trusting FSEvents.
 - Open questions below (rename key, jump semantics) were implemented as proposed: `⌘R`/`⇧F6`/`F2`, prefix type-ahead with same-letter cycling.
 
 ---

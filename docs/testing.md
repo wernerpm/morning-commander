@@ -4,7 +4,7 @@ Four layers, from fastest to most realistic. Use the cheapest one that can catch
 
 | Layer | Tool | Runs on | What it covers |
 |---|---|---|---|
-| Rust unit + integration | `cargo test` | macOS (watcher/trash tests need macOS FSEvents/NSFileManager; others anywhere) | listing, cache, watcher patches, rename validation, copy/move, read_text |
+| Rust unit + integration | `cargo test` | macOS (watcher/trash tests need macOS FSEvents/NSFileManager; others anywhere) | listing, cache, watcher patches, rename validation, copy/move, read_text, prefs/state files, disk cache + eviction, stale-while-revalidate, network polling (`HubConfig { force_network, poll_interval }`) |
 | Frontend unit | Vitest (`pnpm test`) | anywhere | sort order, type-to-jump rules, panel store (snapshot/patch/cursor/selection) against the mock |
 | Frontend e2e | Playwright WebKit (`pnpm test:e2e`) | anywhere | keyboard flows end to end in the real UI against `src/ipc/mock.ts` |
 | Real app | `tauri-plugin-webdriver` + `scripts/drive.mjs` | macOS | the actual WKWebView + Rust backend: asset protocol, FSEvents, trash, media playback |
@@ -17,6 +17,16 @@ Four layers, from fastest to most realistic. Use the cheapest one that can catch
 window.__mock.touch("/Users/demo/new.txt", 10);
 window.__mock.remove("/Users/demo/alpha.txt");
 ```
+
+Settings and caching hooks (see `docs/ipc.md` for the real behaviour they imitate):
+
+| Hook | Effect |
+|---|---|
+| `window.__mockSeed = { prefs, state }` | set before the app loads (Playwright `addInitScript`) to preseed `preferences.json` / `state.json` |
+| `__mock.prefs`, `__mock.state` | what has been stored via `prefsSet` / `stateSet` (only set keys, like the files) |
+| `__mock.resetSettings(seed?)`, `__mock.clearCache()` | forget settings / the "cached" directories |
+| `__mock.setNetwork(prefix \| null)` | paths under `prefix` report `network: true`; reopening a cached one sends `stale: true`, then pending changes as a `patch`, then `fresh` |
+| `__mock.revalidateMs` | delay before that `patch`/`fresh` (default 30; raise it to see the ↻) |
 
 Most media URLs from the mock (`mock://…`) don't load. The exceptions are backed by files in `tests/fixtures/` (a 6-page PDF, a 3-second WebM and MP4, a small JPEG), so the photo, PDF.js and video views are covered by e2e tests. Open-source Chromium can't decode H.264, so e2e tests use the WebM for anything that needs playback.
 
@@ -41,6 +51,8 @@ node scripts/drive.mjs key:Backspace wait:800 key:Enter wait:1500 "eval:return w
 ```
 
 Reference numbers (M-series Mac, dev build with opt-level 1): 100k files cached → ipc ≈ 50 ms, apply ≈ 70 ms.
+
+The real app reads settings from `~/.morning-commander/` (`MC_HOME=<dir>` points it elsewhere, e.g. a scratch dir for a clean first launch). `MC_FORCE_NETWORK=1` makes every directory behave like a network one (stale snapshots, mtime revalidation, polling) without a NAS: `MC_FORCE_NETWORK=1 pnpm tauri dev --features webdriver`. In dev builds `window.__mcTiming` entries include `stale`.
 
 A good smoke test after backend changes:
 

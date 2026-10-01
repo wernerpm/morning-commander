@@ -1,6 +1,18 @@
 # Step 11 — Persistent listing cache and fast NAS browsing
 
-> Status: NOT STARTED (planned 2026-09-30) — **highest priority**: most of the media library lives on a NAS, and slow remote listings (Finder is very slow there) are the main pain point.
+> Status: **11b and 11c DONE** (2026-10-01); 11a (streaming, offline badge) and 11d (prefetch) not started. Most of the media library lives on a NAS, and slow remote listings (Finder is very slow there) are the main pain point.
+
+## Results (2026-10-01, real app, dev build, same ~4.3k-entry SMB directory)
+
+| Scenario | Before | After 11b/11c |
+|---|---|---|
+| First visit ever (not cached) | ~12.6 s until anything shows | unchanged — needs 11a streaming |
+| Revisit after the SMB client cache expired (≥ 60 s) | ~8.6 s (full re-read) | **11 ms** to the (stale) listing; mtime check (~30 ms) → `fresh`, the ↻ never became visible |
+| Relaunch the app, panel restores the NAS directory | ~8.6 s | **42 ms** from the disk cache, then `fresh` |
+| Entry added while the app was closed | — | stale listing in 16 ms, then a `patch` adds it and `fresh` |
+| File created on the share from this Mac while shown | not shown (no FSEvents expected) | appeared after 0.2 s (FSEvents does report changes made from this Mac; polling is the backstop) |
+
+On disk the directory takes 396 KB in the compact encoding (662 KB as plain JSON).
 
 ## Goals
 
@@ -158,12 +170,23 @@ src/panel/store.ts           stale/fresh/append handling, footer indicators
 
 ## Acceptance criteria
 
-- [ ] Relaunching the app and opening a previously visited NAS directory shows its listing in < 100 ms, then refreshes
-- [ ] A NAS directory with 5k–10k entries shows the first entries within ~200 ms of `Enter` (cold) and stays navigable while loading
-- [ ] Files added on the NAS from another machine appear in a shown panel within ~5 s
-- [ ] `~/.morning-commander/cache` never exceeds the configured limit; oldest visited directories go first
+- [x] Relaunching the app and opening a previously visited NAS directory shows its listing in < 100 ms, then refreshes (42 ms, see Results)
+- [ ] A NAS directory with 5k–10k entries shows the first entries within ~200 ms of `Enter` (cold) and stays navigable while loading (11a)
+- [ ] Files added on the NAS from another machine appear in a shown panel within ~5 s — polling every 3 s is implemented and tested with `MC_FORCE_NETWORK` (Rust test `shown_network_dirs_are_polled_and_rechecked`); **still to check by hand from a second device** (macOS refuses a second mount of the same share, so it can't be simulated here). The macOS SMB client may cache the directory's attributes for a few seconds, which adds to the delay.
+- [x] `~/.morning-commander/cache` never exceeds the configured limit; oldest visited directories go first (Rust tests in `persist.rs`)
 - [ ] Unplugging the network shows the cached listing marked offline, no spinner lock-up, no crash
 - [ ] Navigating away from a slow directory is instant
+
+## Implementation notes (as built)
+
+- **Modules:** `persist.rs` (disk cache: index, dir files, write-behind flush, eviction, Time Machine xattr), `netvol.rs` (`getmntinfo(MNT_NOWAIT)` — kernel data only, never `statfs` on the path, which can block on an asleep NAS), `prefs.rs`, `fsutil.rs` (0700 dirs, atomic 0600 writes); stale-while-revalidate and polling live in `hub.rs` (module doc lists the invariants). No separate `poller.rs`: polling reuses the hub's revalidation.
+- **Threads:** `mc-watch` (FSEvents batches), `mc-liveness` (1 s existence check; skips network dirs), `mc-poll` (network dirs shown by a panel: mtime-shortcut revalidation every 3 s, 10 s after a minute without changes, reset on navigation), `mc-persist` (flush every 2 s), one short-lived `mc-revalidate` per revalidation (at most one per directory at a time), `mc-state-writer` (debounced `state.json`).
+- **Fast path:** a requested path that is exactly a cache key skips `resolve_dir` (canonicalize), so a relaunch doesn't wait on a sleeping NAS.
+- **`dir_mtime`** is stat'ed *before* reading, so a change during the read shows up as a changed mtime next time.
+- **Own operations:** `rename`, `mkdir`, `trash` and `copy_move` (on done/cancel) call `Hub::recheck` for the touched directories that are cached network directories.
+- **Exit:** `RunEvent::Exit` flushes `state.json` and the listing cache.
+- **Known gaps:** a stale snapshot whose revalidation can't reach the NAS keeps its ↻ (no "offline" badge yet, 11a); new cache limits from `prefs_set` apply at the next flush; a directory evicted from the 256-entry memory cache before its flush keeps its older disk copy (revalidated on the next visit).
+- **Testing switches:** `MC_HOME=<dir>` (settings + cache location), `MC_FORCE_NETWORK=1` (every directory is "network": stale + mtime revalidation + polling). Mock: `__mock.setNetwork(prefix)`, `__mock.revalidateMs` (see `docs/testing.md`).
 
 ## Open questions
 
