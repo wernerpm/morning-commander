@@ -5,6 +5,7 @@ import { batch, createMemo, createSignal } from "solid-js";
 import { panelState, savePanelState } from "../app/settings";
 import { backend, joinPath } from "../ipc";
 import { isNavigable, type Entry, type PanelEvent, type PanelId } from "../ipc/types";
+import { applyFilter } from "./filter";
 import { comparator, insertionIndex, sortEntries, type SortSpec } from "./sort";
 
 export const PARENT: Entry = {
@@ -41,6 +42,8 @@ export function createPanel(id: PanelId) {
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [freeSpace, setFreeSpace] = createSignal<number | null>(null);
+  // Fuzzy filter (⌘F): null = off, "" = open but empty (shows everything).
+  const [filter, setFilterSignal] = createSignal<string | null>(null);
 
   // Name to put the cursor on when the next snapshot arrives.
   let pendingFocus: string | null = null;
@@ -53,7 +56,15 @@ export function createPanel(id: PanelId) {
   const forward: string[] = [];
   let historyNav = false;
 
-  const rows = createMemo<Entry[]>(() => (parent() !== null ? [PARENT, ...sorted()] : sorted()));
+  const filtered = createMemo(() => {
+    const q = filter();
+    return q ? applyFilter(sorted(), q) : null;
+  });
+  const rows = createMemo<Entry[]>(() => {
+    const f = filtered();
+    if (f) return f.rows;
+    return parent() !== null ? [PARENT, ...sorted()] : sorted();
+  });
   const current = createMemo<Entry | undefined>(() => rows()[cursor()]);
 
   const visible = (e: Entry) => showHidden() || !e.hidden;
@@ -99,6 +110,7 @@ export function createPanel(id: PanelId) {
       setNetwork(e.network);
       if (!samePath) {
         setSelected(new Set<string>());
+        setFilterSignal(null);
         setCursor(0);
       }
       resort(pendingFocus ?? keep);
@@ -195,9 +207,32 @@ export function createPanel(id: PanelId) {
     }
   }
 
+  /** Change the filter text; the cursor goes to the best match. */
+  function setFilter(q: string) {
+    const keep = current()?.name;
+    batch(() => {
+      setFilterSignal(q);
+      const f = filtered();
+      if (f) setCursor(f.best);
+      else focusName(keep);
+    });
+  }
+
+  /** Turn the filter off, keeping the cursor on `keep` (default: the current entry). */
+  function clearFilter(keep = current()?.name) {
+    if (filter() === null) return;
+    batch(() => {
+      setFilterSignal(null);
+      if (!focusName(keep)) setCursor(0);
+    });
+  }
+
   function enter(): { file?: Entry } {
     const e = current();
     if (!e) return {};
+    // Opening a file ends the filter with the file still under the cursor;
+    // opening a directory ends it when the new listing arrives.
+    if (!isNavigable(e)) clearFilter(e.name);
     if (e.name === "..") {
       goParent();
       return {};
@@ -241,8 +276,10 @@ export function createPanel(id: PanelId) {
     setSelected(sel);
   }
 
+  /** Select all shown entries (only the matches while filtering), or none. */
   function selectAll(on: boolean) {
-    setSelected(on ? new Set(sorted().map((e) => e.name)) : new Set<string>());
+    const shown = filtered()?.rows ?? sorted();
+    setSelected(on ? new Set(shown.map((e) => e.name)) : new Set<string>());
   }
 
   /** Selected entries, or the entry under the cursor when nothing is selected. */
@@ -294,6 +331,9 @@ export function createPanel(id: PanelId) {
     loading,
     freeSpace,
     refreshFreeSpace,
+    filter,
+    setFilter,
+    clearFilter,
     open,
     enter,
     goParent,

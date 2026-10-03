@@ -14,7 +14,7 @@
 | 5 | Viewer mode: images, PDFs, videos, audio, text | DONE (verified in real app) | [step-5](implementation-plan/step-5-viewer.md) |
 | 6 | Rename in place | DONE (verified in real app) | [step-6](implementation-plan/step-6-rename.md) |
 | 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
-| 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
+| 8 | Polish: sort modes, hidden, history, bookmarks, help, theme, fuzzy filter (`⌘F`) | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI, tag-triggered macOS + Linux release builds done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
 | 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (verified in real app) | [step-10](implementation-plan/step-10-media-viewers.md) |
 | 12 | Video playback: MKV/AVI/TS… via libmedia, NAS read-ahead spool (`media://`) | DONE (verified in the real app, incl. the NAS) | [step-12](implementation-plan/step-12-video-playback.md) |
@@ -237,6 +237,18 @@ The brief says "clicking letters navigates to a file starting with that given le
 
 Matching runs in the frontend on the sorted, visible array (an O(n) scan from the cursor is fine even at 100k entries).
 
+### Fuzzy filter (`⌘F`)
+
+Type-to-jump only finds names by their start. `⌘F` opens a per-panel filter that matches **anywhere** in the name (`src/panel/filter.ts`):
+
+1. `⌘F` opens an empty filter in the active panel's footer (`Filter: ▏ type to filter`). While it is open, printable keys and `Backspace` edit it instead of jumping or going to the parent; `Backspace` on an empty filter closes it.
+2. The panel shows only entries whose name contains the typed characters **in order** (fzf-style), case- and diacritic-insensitive like type-to-jump. The `..` row is hidden while the filter has text. Matched characters are bold and underlined.
+3. Rows keep the panel's sort order; the cursor goes to the best match: a contiguous substring beats scattered characters, a match at a word start beats one mid-word, an earlier match beats a later one.
+4. The footer shows `Filter: <text> · N of M`, red when nothing matches.
+5. Arrows, `Space`/`⌘T`, `F5`/`F6`/`F8` and other commands work on the filtered rows; `⌘A` selects only the matches.
+6. `Enter` on a file opens it **and** clears the filter, leaving the cursor on that file in the full listing. `Enter` on a directory opens it; the new listing starts unfiltered. `Esc` clears the filter and keeps the cursor where it is.
+7. The filter lives in the panel store, so each panel has its own and `Tab` keeps it. Watcher patches are filtered as they arrive. No IPC is involved.
+
 ### Keymap (v1)
 
 | Key | Action | MC equivalent |
@@ -261,7 +273,8 @@ Matching runs in the frontend on the sorted, visible array (an O(n) scan from th
 | `⌘1` … `⌘5` | Sort by name, ext, size, mtime, unsorted | sort menu |
 | `⌘L` | Go to path (type or paste) | `Alt-c` |
 | `⌘D` | Bookmarks / hotlist | `Ctrl-\` |
-| `Esc` | Leave viewer / cancel dialog / clear jump buffer | same |
+| `⌘F` | Fuzzy filter: show only names containing the typed characters (Enter opens and clears, Esc clears) | quick filter |
+| `Esc` | Leave viewer / cancel dialog / clear jump buffer or filter | same |
 
 All bindings go through one **command registry** (id, title, default keys, handler, "enabled in" context such as `panel`, `viewer` or `rename`). This gives remappable keys later and a `⌘K` command palette for free.
 

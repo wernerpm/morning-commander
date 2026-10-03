@@ -35,7 +35,7 @@ Run the relevant checks before every commit.
 src/                      SolidJS frontend
   App.tsx                 layout, key dispatch, dialogs, file-op orchestration
   app/                    Dialog, OpProgress, app.css (theme variables)
-  panel/                  store.ts (panel state), Panel.tsx (virtual list), sort.ts, jump.ts, format.ts
+  panel/                  store.ts (panel state), Panel.tsx (virtual list), sort.ts, jump.ts, filter.ts (⌘F), format.ts
   keys/keymap.ts          command registry + default key bindings
   viewer/                 full-window viewer (image/pdf/video/audio/text)
   ipc/                    types.ts (wire types), index.ts (Tauri calls), mock.ts (in-memory backend)
@@ -46,7 +46,7 @@ scripts/                  screenshot.mjs, drive.mjs
 
 ## Conventions
 
-- Rust owns the filesystem; the frontend owns sorting, cursor, selection and the jump buffer. Don't add per-keypress IPC.
+- Rust owns the filesystem; the frontend owns sorting, cursor, selection, the jump buffer and the filter. Don't add per-keypress IPC.
 - Never bind a command to an unmodified letter or digit: bare printable keys are type-to-jump.
 - All keys go through `src/keys/keymap.ts`. Add a command there, then a handler in `App.tsx`'s `handlers`.
 - Deletions always go to the Trash. Nothing in the app permanently deletes user files.

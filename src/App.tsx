@@ -249,6 +249,10 @@ export default function App() {
     "panel.goto": goto,
     "panel.home": async () => void cur().open(await backend.homeDir()),
     "panel.refresh": () => void cur().reload(),
+    "panel.filter": () => {
+      const p = cur();
+      if (p.filter() === null) p.setFilter("");
+    },
     "sort.name": () => setSort("name"),
     "sort.ext": () => setSort("ext"),
     "sort.size": () => setSort("size"),
@@ -301,14 +305,38 @@ export default function App() {
       }
       return;
     }
+
+    const now = performance.now();
+    const p = cur();
+
+    // While the filter is open, letters and Backspace edit it and Esc ends it;
+    // everything else (arrows, Enter, ⌘ commands) works on the filtered rows.
+    const f = p.filter();
+    if (f !== null) {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        p.clearFilter();
+        return;
+      }
+      if (ev.key === "Backspace" && !ev.metaKey && !ev.altKey && !ev.ctrlKey) {
+        ev.preventDefault();
+        if (f) p.setFilter(f.slice(0, -1));
+        else p.clearFilter();
+        return;
+      }
+      const ch = jumpChar(ev);
+      if (ch !== null) {
+        ev.preventDefault();
+        p.setFilter(f + ch);
+        return;
+      }
+    }
+
     if (op() && ev.key === "Escape") {
       ev.preventDefault();
       void backend.cancelOp(op()!.id);
       return;
     }
-
-    const now = performance.now();
-    const p = cur();
 
     if (jumpActive(jump(), now)) {
       if (ev.key === "Escape") {
@@ -415,7 +443,7 @@ export default function App() {
         <div class="modal-backdrop" onMouseDown={() => setHelp(false)}>
           <div class="modal help">
             <h2>Keys</h2>
-            <p class="muted">Type letters to jump to a file. Esc closes this.</p>
+            <p class="muted">Type letters to jump to a file; ⌘F filters by any part of the name. Esc closes this.</p>
             <table>
               <tbody>
                 <For each={COMMANDS}>

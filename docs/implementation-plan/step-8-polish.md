@@ -1,6 +1,6 @@
 # Step 8 — Polish
 
-> Status: PARTIAL — sort modes, hidden toggle, swap, same-dir, go-to-path, help overlay, light/dark theme, bookmarks, history, free space done; mini-status, MC theme, volumes list not started
+> Status: PARTIAL — sort modes, hidden toggle, swap, same-dir, go-to-path, help overlay, light/dark theme, bookmarks, history, free space, fuzzy filter done; mini-status, MC theme, volumes list not started
 
 ## Goals
 
@@ -20,6 +20,7 @@ The small things that make it a daily driver.
 | Help overlay | `F1`, `⌘/` | rendered from `COMMANDS` |
 | Theme | — | CSS variables in `app/app.css`, light via `prefers-color-scheme` |
 | Remember panel paths, sort, hidden | — | `localStorage` |
+| Fuzzy filter: match anywhere in the name, in order; Enter opens and clears, Esc clears | `⌘F` | `panel/filter.ts`, `store.setFilter`; spec in [the plan](../implementation-plan.md#fuzzy-filter-f) |
 
 ## To do (specs)
 

@@ -4,7 +4,7 @@
 export type CommandId =
   | "cursor.up" | "cursor.down" | "cursor.pageUp" | "cursor.pageDown" | "cursor.home" | "cursor.end"
   | "panel.open" | "panel.parent" | "panel.switch" | "panel.swap" | "panel.sameDir"
-  | "panel.toggleHidden" | "panel.goto" | "panel.home" | "panel.refresh"
+  | "panel.toggleHidden" | "panel.goto" | "panel.home" | "panel.refresh" | "panel.filter"
   | "sort.name" | "sort.ext" | "sort.size" | "sort.mtime" | "sort.none"
   | "select.toggle" | "select.all" | "select.none"
   | "file.view" | "file.edit" | "file.openDefault" | "file.rename"
@@ -34,6 +34,7 @@ export const COMMANDS: Command[] = [
   { id: "panel.goto", title: "Go to path", keys: ["Meta+L", "Meta+Shift+G"] },
   { id: "panel.home", title: "Home directory", keys: ["Meta+Shift+H"] },
   { id: "panel.refresh", title: "Re-read directory", keys: ["Meta+Shift+R"] },
+  { id: "panel.filter", title: "Filter (fuzzy, Esc ends)", keys: ["Meta+F"] },
   { id: "history.back", title: "Back", keys: ["Meta+["] },
   { id: "history.forward", title: "Forward", keys: ["Meta+]"] },
   { id: "bookmarks.open", title: "Bookmarks", keys: ["Meta+D"] },

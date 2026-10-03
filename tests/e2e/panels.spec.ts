@@ -45,6 +45,44 @@ test("pressing the same letter cycles through matches", async ({ page }) => {
   expect(await cursorName(page)).toBe("Downloads");
 });
 
+test("Cmd+F filters by any part of the name; Enter opens and clears it", async ({ page }) => {
+  const p0 = panel(page, 0);
+  await page.keyboard.press("Meta+f");
+  await expect(p0.locator(".filter")).toContainText("Filter:");
+  await page.keyboard.type("port");
+  await expect(p0.locator(".row .name")).toHaveText(["Report 2.pdf", "report 10.pdf"]);
+  await expect(p0.locator(".row.cursor mark")).toHaveText("port");
+  await expect(p0.locator(".filter")).toContainText("Filter: port");
+  // Backspace edits the filter instead of going to the parent.
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
+  await expect(p0.locator(".panel-path")).toHaveText("/Users/demo");
+  await expect(p0.locator(".filter")).toContainText("type to filter");
+  await page.keyboard.type("rdm");
+  await expect(p0.locator(".row .name")).toHaveText(["readme.txt"]);
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".viewer")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".viewer")).toHaveCount(0);
+  await expect(p0.locator(".filter")).toHaveCount(0);
+  expect(await cursorName(page)).toBe("readme.txt");
+  await expect(p0.locator('.row[data-name="Documents"]')).toBeVisible();
+});
+
+test("Cmd+F: Esc ends the filter and keeps the cursor; no match shows red", async ({ page }) => {
+  const p0 = panel(page, 0);
+  await page.keyboard.press("Meta+f");
+  await page.keyboard.type("etaqq");
+  await expect(p0.locator(".filter")).toHaveClass(/miss/);
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Backspace");
+  await expect(p0.locator(".row .name")).toHaveText(["Beta.txt", "zeta.txt"]);
+  await page.keyboard.press("ArrowDown");
+  expect(await cursorName(page)).toBe("zeta.txt");
+  await page.keyboard.press("Escape");
+  await expect(p0.locator(".filter")).toHaveCount(0);
+  expect(await cursorName(page)).toBe("zeta.txt");
+});
+
 test("Tab switches the active panel", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(panel(page, 1)).toHaveClass(/active/);

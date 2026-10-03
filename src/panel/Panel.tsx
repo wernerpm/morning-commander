@@ -1,5 +1,6 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { isNavigable, type Entry } from "../ipc/types";
+import { filterMatch, foldQuery } from "./filter";
 import { formatBytesLong, formatMtime, sizeColumn } from "./format";
 import type { Panel as PanelModel } from "./store";
 
@@ -33,6 +34,27 @@ function selectStem(input: HTMLInputElement) {
   input.setSelectionRange(0, dot > 0 ? dot : v.length);
 }
 
+/** The name with the characters matched by the filter wrapped in <mark>. */
+function highlighted(name: string, positions: number[]): JSX.Element[] {
+  const hit = new Set(positions);
+  const parts: JSX.Element[] = [];
+  let run = "";
+  let inHit = false;
+  const flush = () => {
+    if (run) parts.push(inHit ? <mark>{run}</mark> : run);
+    run = "";
+  };
+  [...name].forEach((c, i) => {
+    if (hit.has(i) !== inHit) {
+      flush();
+      inHit = !inHit;
+    }
+    run += c;
+  });
+  flush();
+  return parts;
+}
+
 export default function Panel(props: Props) {
   let scroller!: HTMLDivElement;
   const [scrollTop, setScrollTop] = createSignal(0);
@@ -43,6 +65,8 @@ export default function Panel(props: Props) {
     ro.observe(scroller);
     onCleanup(() => ro.disconnect());
   });
+
+  const filterQuery = createMemo(() => foldQuery(props.panel.filter() ?? ""));
 
   const pageSize = createMemo(() => Math.max(1, Math.floor(height() / ROW_HEIGHT) - 1));
 
@@ -134,7 +158,14 @@ export default function Panel(props: Props) {
                 >
                   <span class="col-name">
                     <span class="glyph">{glyph(e)}</span>
-                    <Show when={props.renaming === e.name && isCursor()} fallback={<span class="name">{e.name}</span>}>
+                    <Show
+                      when={props.renaming === e.name && isCursor()}
+                      fallback={
+                        <span class="name">
+                          {filterQuery() ? highlighted(e.name, filterMatch(e, filterQuery())?.positions ?? []) : e.name}
+                        </span>
+                      }
+                    >
                       <input
                         class="rename"
                         value={e.name}
@@ -174,7 +205,18 @@ export default function Panel(props: Props) {
       <footer class="panel-status">
         <Show
           when={props.active && props.jumpBuffer}
-          fallback={<span class="summary">{summary()}</span>}
+          fallback={
+            <Show when={props.panel.filter() !== null} fallback={<span class="summary">{summary()}</span>}>
+              <span class="filter" classList={{ miss: props.panel.rows().length === 0 }}>
+                Filter: {props.panel.filter()}
+                <span class="caret" classList={{ on: props.active }} />
+                <span class="muted">
+                  {" "}
+                  {props.panel.filter() ? `${props.panel.rows().length} of ${props.panel.entries().length}` : "type to filter"}
+                </span>
+              </span>
+            </Show>
+          }
         >
           <span class="jump" classList={{ miss: props.jumpMiss }}>
             Jump: {props.jumpBuffer}

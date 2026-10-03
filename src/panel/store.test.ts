@@ -86,6 +86,50 @@ describe("panel store (mock backend)", () => {
       expect(p.targets().map((e) => e.name)).toEqual(["budget.csv", "report.pdf"]);
     }));
 
+  it("filters by any part of the name and ends with the cursor kept", () =>
+    withPanel(async (p) => {
+      await p.open("/Users/demo");
+      p.setFilter("");
+      expect(names(p)[0]).toBe(".."); // empty filter shows everything
+      p.setFilter("port");
+      expect(names(p)).toEqual(["Report 2.pdf", "report 10.pdf"]);
+      p.setFilter("eta");
+      expect(names(p)).toEqual(["Beta.txt", "zeta.txt"]);
+      p.move(1);
+      expect(p.current()?.name).toBe("zeta.txt");
+      p.selectAll(true);
+      expect([...p.selected()]).toEqual(["Beta.txt", "zeta.txt"]); // only the matches
+      p.clearFilter();
+      expect(p.filter()).toBeNull();
+      expect(names(p)).toContain("Documents");
+      expect(p.current()?.name).toBe("zeta.txt");
+    }));
+
+  it("opening a file ends the filter with the file focused; a directory clears it on arrival", () =>
+    withPanel(async (p) => {
+      await p.open("/Users/demo");
+      p.setFilter("zet");
+      expect(p.enter().file?.name).toBe("zeta.txt");
+      expect(p.filter()).toBeNull();
+      expect(p.current()?.name).toBe("zeta.txt");
+      p.setFilter("pict");
+      p.enter();
+      await tick();
+      expect(p.path()).toBe("/Users/demo/Pictures");
+      expect(p.filter()).toBeNull();
+    }));
+
+  it("external changes respect the filter", () =>
+    withPanel(async (p) => {
+      await p.open("/Users/demo");
+      p.setFilter("txt");
+      mock().touch("/Users/demo/new.txt");
+      mock().touch("/Users/demo/new.md");
+      await tick();
+      expect(names(p)).toContain("new.txt");
+      expect(names(p)).not.toContain("new.md");
+    }));
+
   it("persists path, sort and hidden flag to state", () =>
     withPanel(async (p) => {
       await p.open("/Users/demo/Music");

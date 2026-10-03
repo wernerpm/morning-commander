@@ -265,6 +265,42 @@ body,
   color: var(--error);
 }
 
+.filter {
+  color: var(--fg);
+}
+
+.filter.miss {
+  color: var(--error);
+}
+
+.filter .caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+}
+
+.filter .caret.on {
+  background: currentColor;
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    background: transparent;
+  }
+}
+
+/* Characters matched by the ⌘F filter. */
+.row mark {
+  background: none;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .statusline {
   padding: 3px 10px;
   font-family: var(--font-mono);
