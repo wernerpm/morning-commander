@@ -17,7 +17,7 @@
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI, tag-triggered macOS + Linux release builds done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
 | 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (verified in real app) | [step-10](implementation-plan/step-10-media-viewers.md) |
-| 12 | Video playback: MKV/AVI/TS… via libmedia, NAS read-ahead spool (`media://`) | DONE on branch `video-playback` (verified in the real app, incl. the NAS) | [step-12](implementation-plan/step-12-video-playback.md) |
+| 12 | Video playback: MKV/AVI/TS… via libmedia, NAS read-ahead spool (`media://`) | DONE (verified in the real app, incl. the NAS) | [step-12](implementation-plan/step-12-video-playback.md) |
 | 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | PARTIAL: 11b (disk cache, stale-while-revalidate) and 11c (polling) DONE, verified on the real NAS; 11a (streaming) and 11d (prefetch) not started | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
 
 Related docs: [`ipc.md`](ipc.md) (Rust ↔ webview contract), [`testing.md`](testing.md) (test layers, driving the real app), [`release.md`](release.md) (build and publish), [`../CLAUDE.md`](../CLAUDE.md) (agent guide).

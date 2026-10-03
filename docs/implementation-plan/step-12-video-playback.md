@@ -1,6 +1,6 @@
 # Step 12 — Video playback: more formats, NAS read-ahead
 
-> Status: DONE on branch `video-playback` (2026-10-01). Verified in the real app with H.264/AC-3, HEVC/DTS and VP9/Opus MKV, Xvid/MP3 AVI, MPEG-2 TS, and a 300 MB MKV on the NAS. Frontend unit + e2e (Playwright WebKit plays a tiny MKV through libmedia) and Rust tests pass.
+> Status: DONE (2026-10-01, merged to main 2026-10-03). Verified in the real app with H.264/AC-3, HEVC/DTS and VP9/Opus MKV, Xvid/MP3 AVI, MPEG-2 TS, and a 300 MB MKV on the NAS. Frontend unit + e2e (Playwright WebKit plays a tiny MKV through libmedia) and Rust tests pass.
 
 ## Goals
 
