@@ -15,7 +15,7 @@
 | 6 | Rename in place | DONE (verified in real app) | [step-6](implementation-plan/step-6-rename.md) |
 | 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
-| 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
+| 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI, tag-triggered macOS + Linux release builds done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
 | 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (verified in real app) | [step-10](implementation-plan/step-10-media-viewers.md) |
 | 12 | Video playback: MKV/AVI/TS… via libmedia, NAS read-ahead spool (`media://`) | DONE on branch `video-playback` (verified in the real app, incl. the NAS) | [step-12](implementation-plan/step-12-video-playback.md) |
 | 11 | Persistent listing cache (`~/.morning-commander/`, 100 MB) + fast NAS browsing | PARTIAL: 11b (disk cache, stale-while-revalidate) and 11c (polling) DONE, verified on the real NAS; 11a (streaming) and 11d (prefetch) not started | [step-11](implementation-plan/step-11-persistent-cache-nas.md) |
@@ -34,7 +34,7 @@ Each is self-contained; the linked step doc has the spec. Keep `docs/ipc.md`, th
 4. **Mini-status line** — full name, exact size, permissions, mtime of the cursor entry ([step-8](implementation-plan/step-8-polish.md)).
 5. **Batch rename** when several files are selected ([step-6](implementation-plan/step-6-rename.md)).
 6. **User keymap overrides + ⌘K command palette** ([step-4](implementation-plan/step-4-keyboard.md)).
-7. **Release workflow** — Developer ID signing + notarisation on tag ([release.md](release.md)).
+7. **Release signing** — Developer ID signing + notarisation in the tag build ([release.md](release.md)); the unsigned build workflow exists.
 
 ### Measured (dev build, M-series Mac)
 

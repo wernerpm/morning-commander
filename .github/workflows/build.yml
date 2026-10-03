@@ -1,0 +1,96 @@
+name: Build
+
+# Release bundles for macOS and Linux. Runs on version tags (and creates a
+# draft GitHub Release), on demand, and on PRs that touch the build setup.
+# The ordinary checks live in ci.yml.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/build.yml
+      - src-tauri/tauri.conf.json
+      - src-tauri/Cargo.toml
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+            # Apple Silicon + Intel in one .app/.dmg.
+            args: --target universal-apple-darwin --bundles app,dmg
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            artifacts: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          - name: linux
+            # Oldest supported runner: the AppImage/deb then run on distros
+            # with glibc >= 2.35 as well as newer ones.
+            os: ubuntu-22.04
+            args: --bundles deb,appimage
+            rust-targets: ''
+            artifacts: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev \
+            build-essential pkg-config file xdg-utils
+
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm tauri build ${{ matrix.args }}
+        env:
+          # Ad-hoc signature until Developer ID secrets exist (docs/release.md).
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: morning-commander-${{ matrix.name }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --draft \
+            --title "Morning Commander ${GITHUB_REF_NAME#v}" --generate-notes

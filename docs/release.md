@@ -82,9 +82,22 @@ pnpm tauri build
 4. Verify: `spctl -a -vv "src-tauri/target/release/bundle/macos/Morning Commander.app"` should say `source=Notarized Developer ID`.
 5. Upload the DMG with `gh release create` as above.
 
-### 3. Automated releases from CI (not set up yet)
+### 3. Automated builds from CI
 
-Add `.github/workflows/release.yml` triggered on `v*` tags, using [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action) on `macos-latest`. It builds, signs, notarises and creates a draft GitHub Release. Store in repository secrets:
+`.github/workflows/build.yml` builds release bundles on GitHub Actions:
+
+| Runner | Output |
+|---|---|
+| `macos-latest` | universal (Apple Silicon + Intel) `.dmg`, ad-hoc signed |
+| `ubuntu-22.04` | `.deb` and `.AppImage` (x86_64, glibc ≥ 2.35) |
+
+It runs on `v*` tags, on demand (Actions → Build → Run workflow) and on PRs that change the build setup. Every run uploads the bundles as workflow artifacts; a tag run also creates a **draft** GitHub Release with them attached, which you review and publish by hand.
+
+So a release is: bump the version (above), `git tag v0.2.0 && git push --tags`, wait for the Build workflow, then publish the draft.
+
+The Linux build is a by-product of Tauri being cross-platform. The app is designed for macOS (Finder-style Trash, `/Volumes`, FSEvents), so treat Linux as best-effort. Windows is not built: the backend uses `std::os::unix` and `libc` outside `cfg(target_os = "macos")` gates (`ops.rs`, `fsutil.rs`, `volume.rs`, `persist.rs`), so it needs a porting step before a `windows-latest` entry can be added to the matrix.
+
+**Signing and notarising in CI (not set up yet).** Once you have a Developer ID certificate, add these repository secrets and pass them to the macOS build step's `env` (Tauri's CLI imports `APPLE_CERTIFICATE` into a temporary keychain and notarises when the `APPLE_ID` variables are set). Replace the ad-hoc `APPLE_SIGNING_IDENTITY: '-'` with the secret.
 
 | Secret | Contents |
 |---|---|
