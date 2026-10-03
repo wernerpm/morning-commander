@@ -83,6 +83,16 @@ test("Cmd+F: Esc ends the filter and keeps the cursor; no match shows red", asyn
   expect(await cursorName(page)).toBe("zeta.txt");
 });
 
+test("Cmd+F: Space is part of the filter and selects nothing", async ({ page }) => {
+  const p0 = panel(page, 0);
+  await page.keyboard.press("Meta+f");
+  await page.keyboard.type("report 1");
+  await expect(p0.locator(".row .name")).toHaveText(["report 10.pdf"]);
+  await page.keyboard.press("Escape");
+  await expect(p0.locator(".row.selected")).toHaveCount(0);
+  expect(await cursorName(page)).toBe("report 10.pdf");
+});
+
 test("Tab switches the active panel", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(panel(page, 1)).toHaveClass(/active/);

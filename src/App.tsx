@@ -309,8 +309,9 @@ export default function App() {
     const now = performance.now();
     const p = cur();
 
-    // While the filter is open, letters and Backspace edit it and Esc ends it;
-    // everything else (arrows, Enter, ⌘ commands) works on the filtered rows.
+    // While the filter is open, letters, Space and Backspace edit it and Esc
+    // ends it; everything else (arrows, Enter, ⌘ commands) works on the
+    // filtered rows. Space is text here (names have spaces), not select.toggle.
     const f = p.filter();
     if (f !== null) {
       if (ev.key === "Escape") {
@@ -324,7 +325,7 @@ export default function App() {
         else p.clearFilter();
         return;
       }
-      const ch = jumpChar(ev);
+      const ch = ev.key === " " && !ev.metaKey && !ev.ctrlKey ? " " : jumpChar(ev);
       if (ch !== null) {
         ev.preventDefault();
         p.setFilter(f + ch);

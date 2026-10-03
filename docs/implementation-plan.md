@@ -241,11 +241,11 @@ Matching runs in the frontend on the sorted, visible array (an O(n) scan from th
 
 Type-to-jump only finds names by their start. `⌘F` opens a per-panel filter that matches **anywhere** in the name (`src/panel/filter.ts`):
 
-1. `⌘F` opens an empty filter in the active panel's footer (`Filter: ▏ type to filter`). While it is open, printable keys and `Backspace` edit it instead of jumping or going to the parent; `Backspace` on an empty filter closes it.
+1. `⌘F` opens an empty filter in the active panel's footer (`Filter: ▏ type to filter`). While it is open, printable keys (including `Space`, since names have spaces) and `Backspace` edit it instead of jumping, selecting or going to the parent; `Backspace` on an empty filter closes it.
 2. The panel shows only entries whose name contains the typed characters **in order** (fzf-style), case- and diacritic-insensitive like type-to-jump. The `..` row is hidden while the filter has text. Matched characters are bold and underlined.
 3. Rows keep the panel's sort order; the cursor goes to the best match: a contiguous substring beats scattered characters, a match at a word start beats one mid-word, an earlier match beats a later one.
 4. The footer shows `Filter: <text> · N of M`, red when nothing matches.
-5. Arrows, `Space`/`⌘T`, `F5`/`F6`/`F8` and other commands work on the filtered rows; `⌘A` selects only the matches.
+5. Arrows, `⌘T`/`Insert` (select), `F5`/`F6`/`F8` and other commands work on the filtered rows; `⌘A` selects only the matches.
 6. `Enter` on a file opens it **and** clears the filter, leaving the cursor on that file in the full listing. `Enter` on a directory opens it; the new listing starts unfiltered. `Esc` clears the filter and keeps the cursor where it is.
 7. The filter lives in the panel store, so each panel has its own and `Tab` keeps it. Watcher patches are filtered as they arrive. No IPC is involved.
 
