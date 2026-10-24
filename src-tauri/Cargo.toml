@@ -1,6 +1,6 @@
 [package]
 name = "morning-commander"
-version = "0.2.1"
+version = "0.2.2"
 description = "Dual-pane file manager for macOS"
 authors = ["Werner Moraes <wernerpm@gmail.com>"]
 license = "Apache-2.0"
@@ -43,8 +43,12 @@ percent-encoding = "2"
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
-strip = true
+# Keep the default `panic = "unwind"`. wry catches the NSException WebKit throws
+# when a cancelled custom-protocol request (media:// while seeking or closing a
+# video) is answered late, via objc2::exception::catch; that needs unwinding
+# through a Rust frame, and with `panic = "abort"` it aborts the app instead.
+# Strip only debug info: function names stay, so crash reports are readable.
+strip = "debuginfo"
 
 [dev-dependencies]
 tempfile = "3.27.0"

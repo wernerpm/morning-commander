@@ -27,6 +27,8 @@ pnpm tauri build --target universal-apple-darwin
 
 Before building a release, run the checks: `pnpm typecheck && pnpm test && pnpm test:e2e && (cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test)`.
 
+Don't set `panic = "abort"` in `[profile.release]`: wry catches the `NSException` WebKit throws when a cancelled `media://` request is answered late (seeking or closing a video), and that catch only works with unwinding. With `abort`, the app crashes instead (0.2.1 and earlier). `strip = "debuginfo"` keeps function names, so macOS crash reports are readable.
+
 Never build releases with `--features webdriver` (it's also compiled out of release builds by `cfg(debug_assertions)`, but don't rely on that alone).
 
 ### Version
