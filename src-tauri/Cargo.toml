@@ -1,6 +1,6 @@
 [package]
 name = "morning-commander"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dual-pane file manager for macOS"
 authors = ["Werner Moraes <wernerpm@gmail.com>"]
 license = "Apache-2.0"
@@ -29,12 +29,12 @@ trash = "5.2.9"
 parking_lot = "0.12.5"
 rayon = "1.12.0"
 thiserror = "2.0.21"
-unicode-normalization = "0.1.25"
+unicode-normalization = "0.1.26"
 log = "0.4.34"
 env_logger = "0.11.11"
 tauri-plugin-webdriver = { version = "0.2.3", optional = true }
 libc = "0.2.189"
-sha2 = "0.10"
+sha2 = "0.11"
 percent-encoding = "2"
 
 
