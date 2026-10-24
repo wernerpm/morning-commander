@@ -49,7 +49,7 @@ scripts/                  screenshot.mjs, drive.mjs
 - Rust owns the filesystem; the frontend owns sorting, cursor, selection, the jump buffer and the filter. Don't add per-keypress IPC.
 - Never bind a command to an unmodified letter or digit: bare printable keys are type-to-jump.
 - All keys go through `src/keys/keymap.ts`. Add a command there, then a handler in `App.tsx`'s `handlers`.
-- Deletions always go to the Trash. Nothing in the app permanently deletes user files.
+- Deletions go to the Trash. The only permanent delete is `delete_permanently`, offered after trashing failed (e.g. an SMB share has no Trash) and only after the user confirms a "Delete permanently" dialog. Never call it otherwise; it refuses `/`, the home folder, mount points and `..` paths.
 - Changes to the filesystem are never patched into the UI by the code that made them (except the optimistic rename); the watcher reports them.
 - Keep the mock backend (`src/ipc/mock.ts`) in sync with new commands so e2e tests can cover them.
 - **Privacy:** never commit real paths, share names or file names from the owner's disks or NAS (docs, tests, fixtures, commit messages). Use placeholders (`/Volumes/<share>/<dir>`) or the mock tree (`/Users/demo`).

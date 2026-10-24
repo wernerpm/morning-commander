@@ -132,10 +132,17 @@ export default function App() {
     return targets.length === 1 ? `"${targets[0].name}"` : `${targets.length} items`;
   }
 
+  // Network volumes where trashing failed this session: deleting there asks
+  // for a permanent delete straight away instead of trying the Trash first.
+  const noTrash = new Set<string>();
+  const volumeRoot = (path: string) => /^\/Volumes\/[^/]+/.exec(path)?.[0] ?? "/";
+
   function trash() {
     const p = cur();
     const targets = p.targets();
     if (!targets.length) return;
+    const paths = targets.map((t) => p.fullPath(t.name));
+    if (p.network() && noTrash.has(volumeRoot(p.path()))) return confirmDeletePermanently(p, targets, paths, null);
     setDialog({
       kind: "confirm",
       title: "Move to Trash",
@@ -144,12 +151,36 @@ export default function App() {
       danger: true,
       onConfirm: async () => {
         try {
-          await backend.trash(targets.map((t) => p.fullPath(t.name)));
+          await backend.trash(paths);
           p.selectAll(false);
           p.refreshFreeSpace();
           flash(`Moved ${describe(targets)} to the Trash`);
         } catch (err) {
-          flash(`Trash failed: ${err}`, true);
+          // Typically a network share without a Trash. Offer a permanent delete instead.
+          if (p.network()) noTrash.add(volumeRoot(p.path()));
+          confirmDeletePermanently(p, targets, paths, String(err));
+        }
+      },
+    });
+  }
+
+  /** The only way the app deletes for good: after trashing failed, and confirmed here. */
+  function confirmDeletePermanently(p: PanelModel, targets: Entry[], paths: string[], reason: string | null) {
+    const why = reason ? `Couldn't move to the Trash: ${reason}.` : "This volume has no Trash.";
+    setDialog({
+      kind: "confirm",
+      title: "Delete permanently",
+      message: `${why} Delete ${describe(targets)} permanently? This can't be undone.`,
+      okLabel: "Delete permanently",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await backend.deletePermanently(paths);
+          p.selectAll(false);
+          p.refreshFreeSpace();
+          flash(`Deleted ${describe(targets)}`);
+        } catch (err) {
+          flash(`Delete failed: ${err}`, true);
         }
       },
     });

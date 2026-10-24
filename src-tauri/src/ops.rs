@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs::{self, File, FileTimes};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -88,6 +88,50 @@ pub fn trash(paths: &[PathBuf]) -> Result<(), String> {
         ctx.set_delete_method(DeleteMethod::NsFileManager);
     }
     ctx.delete_all(paths).map_err(|e| e.to_string())
+}
+
+/// Delete permanently, for volumes without a Trash (e.g. SMB shares). Only ever
+/// called after the user confirmed it. Directories go with their contents;
+/// symlinks are removed, never followed. Paths that are already gone are fine
+/// (an earlier, partly successful trash may have taken them).
+pub fn delete_permanently(paths: &[PathBuf]) -> Result<(), String> {
+    let home = crate::listing::home_dir();
+    for p in paths {
+        // Only plain entries inside a directory: never `/`, the home folder or `..` tricks.
+        let plain = p.is_absolute()
+            && p.file_name().is_some()
+            && p.components().all(|c| matches!(c, Component::RootDir | Component::Normal(_)))
+            && p.components().count() > 2;
+        if !plain || *p == home || is_mount_point(p) {
+            return Err(format!("{}: refusing to delete this path", p.display()));
+        }
+    }
+    let mut errors = Vec::new();
+    for p in paths {
+        let r = match fs::symlink_metadata(p) {
+            Ok(m) if m.is_dir() => fs::remove_dir_all(p),
+            Ok(_) => fs::remove_file(p),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = r {
+            let name = p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned());
+            errors.push(format!("{name}: {e}"));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+/// A directory on a different device than its parent, e.g. `/Volumes/<share>`.
+fn is_mount_point(p: &Path) -> bool {
+    let (Ok(m), Some(parent)) = (fs::symlink_metadata(p), p.parent()) else {
+        return false;
+    };
+    m.is_dir() && fs::metadata(parent).is_ok_and(|pm| pm.dev() != m.dev())
 }
 
 /// Registry of running copy/move operations.
@@ -540,6 +584,49 @@ mod tests {
             assert!(Instant::now() < deadline, "no conflict event");
             thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn delete_permanently_removes_files_and_trees_but_not_symlink_targets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        fs::write(r.join("a.txt"), b"x").unwrap();
+        fs::create_dir_all(r.join("tree/sub")).unwrap();
+        fs::write(r.join("tree/sub/b.txt"), b"y").unwrap();
+        fs::create_dir(r.join("keep")).unwrap();
+        fs::write(r.join("keep/c.txt"), b"z").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(r.join("keep"), r.join("link")).unwrap();
+        let paths = [r.join("a.txt"), r.join("tree"), r.join("link"), r.join("already-gone")];
+        delete_permanently(&paths).unwrap();
+        assert!(!r.join("a.txt").exists());
+        assert!(!r.join("tree").exists());
+        assert!(fs::symlink_metadata(r.join("link")).is_err());
+        assert!(r.join("keep/c.txt").exists(), "symlink target must survive");
+    }
+
+    #[test]
+    fn delete_permanently_refuses_dangerous_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), b"x").unwrap();
+        for p in [
+            PathBuf::from("/"),
+            PathBuf::from("/Users"),
+            crate::listing::home_dir(),
+            tmp.path().join("x/../a.txt"),
+            PathBuf::from("relative/a.txt"),
+        ] {
+            assert!(delete_permanently(&[p.clone(), tmp.path().join("a.txt")]).is_err(), "{p:?}");
+        }
+        assert!(tmp.path().join("a.txt").exists(), "nothing is deleted when any path is refused");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn mount_points_are_detected() {
+        assert!(is_mount_point(Path::new("/dev"))); // devfs
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!is_mount_point(tmp.path()));
     }
 
     #[test]

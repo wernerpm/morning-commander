@@ -137,6 +137,33 @@ test("F8 trashes after confirmation", async ({ page }) => {
   await expect(panel(page, 0).locator('.row[data-name="Beta.txt"]')).toHaveCount(0);
 });
 
+test("F8 without a Trash offers a permanent delete, then asks for it directly", async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).__mock.setNetwork("/Users/demo/Documents");
+    (window as any).__mock.setNoTrash("/Users/demo/Documents");
+  });
+  const p0 = panel(page, 0);
+  const dialog = page.getByRole("dialog");
+  await page.keyboard.type("doc", { delay: 30 });
+  await page.keyboard.press("Enter");
+  await expect(p0.locator(".panel-path")).toHaveText("/Users/demo/Documents");
+  await page.keyboard.type("notes", { delay: 30 });
+  await page.keyboard.press("F8");
+  await expect(dialog).toContainText("Move");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toContainText("Delete permanently");
+  await expect(dialog).toContainText("Couldn't move to the Trash");
+  await page.keyboard.press("Enter");
+  await expect(p0.locator('.row[data-name="notes.md"]')).toHaveCount(0);
+  // Second time on this volume: straight to the permanent-delete question; Esc keeps the file.
+  await page.keyboard.type("bud", { delay: 30 });
+  await page.keyboard.press("F8");
+  await expect(dialog).toContainText("This volume has no Trash");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(p0.locator('.row[data-name="budget.csv"]')).toHaveCount(1);
+});
+
 test("F5 copies selected files to the other panel", async ({ page }) => {
   await page.keyboard.press("Tab");
   await page.keyboard.press("d");

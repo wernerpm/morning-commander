@@ -1,6 +1,6 @@
 [package]
 name = "morning-commander"
-version = "0.2.0"
+version = "0.2.1"
 description = "Dual-pane file manager for macOS"
 authors = ["Werner Moraes <wernerpm@gmail.com>"]
 license = "Apache-2.0"

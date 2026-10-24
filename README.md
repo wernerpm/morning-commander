@@ -69,7 +69,7 @@ See [`docs/testing.md`](docs/testing.md) for driving the real app with WebDriver
 | `F5` / `⌘C` | Copy to other panel |
 | `F6` / `⌘M` | Move to other panel |
 | `F7` / `⌘⇧N` | New folder |
-| `F8` / `⌘⌫` | Move to Trash |
+| `F8` / `⌘⌫` | Move to Trash (on shares without a Trash: asks to delete permanently) |
 | `⌘O` | Open with default app |
 | `⌘U` | Swap panels |
 | `⌘.` | Toggle hidden files |

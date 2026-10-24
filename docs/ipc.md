@@ -119,6 +119,7 @@ interface AppState {             // state.json: session state, written often
 | `rename` | `dir, from, to: string` | `void` | Errors if `to` exists (case-only renames allowed). Validates the name. |
 | `mkdir` | `dir, name: string` | `void` | |
 | `trash` | `paths: string[]` | `void` | NSFileManager trash |
+| `delete_permanently` | `paths: string[]` | `void` | Only after `trash` failed and the user confirmed "Delete permanently". Removes files, directory trees and symlinks (never follows them); already-missing paths are fine. Refuses `/`, the home folder, mount points (e.g. `/Volumes/<share>`) and paths with `.`/`..`, deleting nothing if any path is refused. |
 | `copy_move` | `kind: OpKind, sources: string[], destDir: string, onEvent: Channel<OpEvent>` | `number` (op id) | Runs in background. When a top-level destination exists it emits `conflict` and blocks until `resolve_conflict` (or `cancel_op`). Copying an item onto itself (same dir) keeps both without asking; moving onto itself is a no-op. |
 | `resolve_conflict` | `id: number, choice: ConflictChoice, applyToAll: boolean` | `void` | `applyToAll` reuses the choice for the remaining conflicts of this op. |
 | `cancel_op` | `id: number` | `void` | |

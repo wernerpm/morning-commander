@@ -13,7 +13,7 @@
 | 4 | Keyboard: type-to-jump, selection, keymap registry | DONE | [step-4](implementation-plan/step-4-keyboard.md) |
 | 5 | Viewer mode: images, PDFs, videos, audio, text | DONE (verified in real app) | [step-5](implementation-plan/step-5-viewer.md) |
 | 6 | Rename in place | DONE (verified in real app) | [step-6](implementation-plan/step-6-rename.md) |
-| 7 | File operations: copy, move, mkdir, trash, progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
+| 7 | File operations: copy, move, mkdir, trash (permanent delete where there is no Trash), progress, conflict prompts | DONE | [step-7](implementation-plan/step-7-file-operations.md) |
 | 8 | Polish: sort modes, hidden, history, bookmarks, help, theme, fuzzy filter (`⌘F`) | PARTIAL | [step-8](implementation-plan/step-8-polish.md) |
 | 9 | Packaging: app bundle, icon, signing, CI | PARTIAL (icon, `.app`/`.dmg`, CI, tag-triggered macOS + Linux release builds done; notarisation not started) | [step-9](implementation-plan/step-9-packaging.md) |
 | 10 | Media-specific viewers: photo / video player / PDF.js, fullscreen, preferences file | DONE (verified in real app) | [step-10](implementation-plan/step-10-media-viewers.md) |
@@ -266,7 +266,7 @@ Type-to-jump only finds names by their start. `⌘F` opens a per-panel filter th
 | `F5` / `⌘C` | Copy to other panel (confirm dialog) | same |
 | `F6` / `⌘M` | Move to other panel | same |
 | `F7` / `⌘⇧N` | New folder | same |
-| `F8` / `⌘⌫` | Move to Trash | `F8` (MC deletes; we trash) |
+| `F8` / `⌘⌫` | Move to Trash; where that fails (shares without a Trash) offers to delete permanently | `F8` (MC deletes; we trash) |
 | `⌘U` | Swap panels | `Ctrl-U` |
 | `⌘=` | Other panel shows the same dir | `Alt-o`-ish |
 | `⌘.` | Toggle hidden files | `Alt-.` |
@@ -326,7 +326,7 @@ Notes:
 - **Copy**: v1 uses a chunked copy with progress and preserves mtime and permissions. Later, `copyfile(3)` with `COPYFILE_CLONE` for instant APFS clones and extended attributes.
 - **Conflicts**: ask per file (Overwrite / Skip / Rename / Apply to all).
 - **Cancel**: cooperative flag checked between chunks; remove the partial file on cancel.
-- **Delete** always goes to the Trash. Permanent delete (`⇧F8`) needs a typed confirmation and comes later.
+- **Delete** goes to the Trash. Network shares (SMB) usually have no Trash, so when trashing fails the app shows a red "Delete permanently" confirmation with the reason; confirming calls `delete_permanently`. After one failure on a network volume (`/Volumes/<share>`), later deletes there in the same session ask "Delete permanently" directly. On local disks the Trash is always tried first. A separate permanent delete key (`⇧F8`) is not planned.
 - Watchers update both panels automatically; operations never patch the UI directly.
 
 ---

@@ -9,7 +9,7 @@ Rename, create folders, move to Trash, and copy or move files between panels, wi
 ## Principles
 
 - **Operations never touch the cache or send panel events.** The watcher reports their effects like any other change. The frontend may apply an optimistic rename, but the watcher patch is authoritative.
-- **Nothing is permanently deleted.** `trash` uses `NSFileManager` (`trash` crate, `DeleteMethod::NsFileManager`: no Finder Automation prompt). A move deletes its source only after an error-free copy.
+- **Nothing is permanently deleted without asking.** `trash` uses `NSFileManager` (`trash` crate, `DeleteMethod::NsFileManager`: no Finder Automation prompt). A move deletes its source only after an error-free copy.
 - **Conflicts never destroy data.** A top-level conflict emits `OpEvent::Conflict { path }` and the job thread blocks (polling the cancel flag every 100 ms) until `resolve_conflict(id, choice, applyToAll)` answers. Replace moves the existing item to the Trash before copying; Keep both picks `stem N.ext` (N ≥ 2); copying onto itself keeps both automatically. Conflicts *inside* a copied directory tree are not asked about (the destination directory is new, so they can't happen except for races).
 - All errors are human-readable `String`s prefixed with the affected name.
 
@@ -17,9 +17,9 @@ Rename, create folders, move to Trash, and copy or move files between panels, wi
 
 | File | Responsibility |
 |---|---|
-| `src-tauri/src/ops.rs` | `validate_name`, `rename`, `mkdir`, `trash`, `Ops` (registry of running copy/move jobs), `Job` (the copy engine). |
+| `src-tauri/src/ops.rs` | `validate_name`, `rename`, `mkdir`, `trash`, `delete_permanently`, `Ops` (registry of running copy/move jobs), `Job` (the copy engine). |
 | `src-tauri/src/text.rs` | `read_text` for the viewer (bounded, binary sniff). |
-| `src-tauri/src/commands.rs` | `rename`, `mkdir`, `trash`, `copy_move`, `cancel_op`, `open_default`, `read_text`. |
+| `src-tauri/src/commands.rs` | `rename`, `mkdir`, `trash`, `delete_permanently`, `copy_move`, `cancel_op`, `open_default`, `read_text`. |
 
 ## Commands
 
@@ -37,6 +37,12 @@ Rename, create folders, move to Trash, and copy or move files between panels, wi
 ### `trash(paths)`
 
 One `delete_all` call for all paths. Errors come back as one string.
+
+### `delete_permanently(paths)`
+
+Shares without a Trash (SMB on a NAS) make `trash` fail. The frontend then shows a red "Delete permanently … can't be undone" dialog with the error; only confirming it calls `delete_permanently` (`ops::delete_permanently`). It removes files, directory trees (`remove_dir_all`) and symlinks (never followed), treats missing paths as done, and collects per-item errors. Before touching anything it refuses the whole call if any path is `/`, the home folder, a mount point (different `st_dev` than its parent, e.g. `/Volumes/<share>`), relative, or contains `.`/`..`. After one failure on a network volume, `App.tsx` remembers the volume for the session and asks for the permanent delete directly. A held `Enter` (key repeat) never confirms a dialog.
+
+Replace on conflict still trashes the existing item; on a share without a Trash it reports an error instead of overwriting.
 
 ### `copy_move(kind, sources, destDir, onEvent) → id`
 

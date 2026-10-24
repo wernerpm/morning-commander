@@ -60,6 +60,7 @@ pub fn run() {
             commands::rename,
             commands::mkdir,
             commands::trash,
+            commands::delete_permanently,
             commands::copy_move,
             commands::cancel_op,
             commands::resolve_conflict,

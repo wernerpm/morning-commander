@@ -119,6 +119,23 @@ pub async fn trash(hub: State<'_, Arc<Hub>>, paths: Vec<String>) -> Result<(), S
     .await
 }
 
+/// Permanent delete; the frontend only calls it after the user confirmed it
+/// (trash failed, e.g. a network share without a Trash).
+#[tauri::command]
+pub async fn delete_permanently(hub: State<'_, Arc<Hub>>, paths: Vec<String>) -> Result<(), String> {
+    let paths = paths
+        .iter()
+        .map(|p| abs(p))
+        .collect::<Result<Vec<_>, _>>()?;
+    let hub = hub.inner().clone();
+    blocking(move || {
+        let r = ops::delete_permanently(&paths);
+        hub.recheck(&parents(&paths));
+        r
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn copy_move(
     hub: State<'_, Arc<Hub>>,

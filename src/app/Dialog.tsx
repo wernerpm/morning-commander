@@ -57,7 +57,8 @@ export default function Dialog(props: Props) {
           if (e.key === "Escape") {
             e.preventDefault();
             props.onClose();
-          } else if (e.key === "Enter") {
+          } else if (e.key === "Enter" && !e.repeat) {
+            // A held Enter must not confirm a dialog that appears under it (e.g. delete permanently).
             e.preventDefault();
             accept();
           }

@@ -120,6 +120,15 @@ class MockFs {
     this.state = structuredClone(seed?.state ?? {});
   }
 
+  // Paths under these prefixes can't be trashed (like an SMB share).
+  noTrashPrefixes: string[] = [];
+
+  /** Make `trash` fail under `prefix`, like a share without a Trash; `null` clears all. */
+  setNoTrash(prefix: string | null) {
+    if (prefix === null) this.noTrashPrefixes = [];
+    else this.noTrashPrefixes.push(this.norm(prefix));
+  }
+
   /** Mark paths under `prefix` as on a network volume; `null` clears all. */
   setNetwork(prefix: string | null) {
     if (prefix === null) this.networkPrefixes = [];
@@ -302,6 +311,11 @@ export const mockBackend: Backend = {
     fs.notify(fs.norm(dir), [], [name]);
   },
   async trash(paths) {
+    const blocked = (p: string) => fs.noTrashPrefixes.some((pre) => p === pre || p.startsWith(pre + "/"));
+    if (paths.some((p) => blocked(fs.norm(p)))) throw "The volume doesn't support the Trash";
+    for (const p of paths) fs.remove(p);
+  },
+  async deletePermanently(paths) {
     for (const p of paths) fs.remove(p);
   },
   async copyMove(kind, sources, destDir, onEvent) {

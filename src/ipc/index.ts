@@ -29,6 +29,8 @@ export interface Backend {
   rename(dir: string, from: string, to: string): Promise<void>;
   mkdir(dir: string, name: string): Promise<void>;
   trash(paths: string[]): Promise<void>;
+  /** Only after the user confirmed it, when `trash` failed (e.g. a share without a Trash). */
+  deletePermanently(paths: string[]): Promise<void>;
   copyMove(kind: OpKind, sources: string[], destDir: string, onEvent: (e: OpEvent) => void): Promise<number>;
   cancelOp(id: number): Promise<void>;
   resolveConflict(id: number, choice: ConflictChoice, applyToAll: boolean): Promise<void>;
@@ -62,6 +64,7 @@ const tauriBackend: Backend = {
   rename: (dir, from, to) => invoke("rename", { dir, from, to }),
   mkdir: (dir, name) => invoke("mkdir", { dir, name }),
   trash: (paths) => invoke("trash", { paths }),
+  deletePermanently: (paths) => invoke("delete_permanently", { paths }),
   async copyMove(kind, sources, destDir, onEvent) {
     const ch = new Channel<OpEvent>();
     ch.onmessage = onEvent;
