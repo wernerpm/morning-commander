@@ -91,6 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          # Artifacts keep their bundle subfolders (deb/, appimage/), so upload files, not dist/*.
+          find dist -type f -print0 | xargs -0 gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" --draft \
             --title "Morning Commander ${GITHUB_REF_NAME#v}" --generate-notes
